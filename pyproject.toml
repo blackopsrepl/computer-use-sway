@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "computer-use-sway"
+version = "0.1.0"
+description = "MCP server for controlling the current Sway desktop session"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Vittorio Distefano" },
+]
+keywords = ["mcp", "sway", "wayland", "desktop-automation", "computer-use"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Desktop Environment",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "build>=1.2",
+]
+publish = [
+    "build>=1.2",
+    "twine>=5.0",
+]
+
+[project.scripts]
+computer-use-sway = "computer_use_sway.server:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
