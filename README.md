@@ -1,5 +1,9 @@
 # computer-use-sway
 
+<p align="center">
+  <img src="assets/mascot.png" alt="computer-use-sway mascot" width="260">
+</p>
+
 `computer-use-sway` is a local MCP stdio server that lets an MCP client inspect and operate the current Sway desktop session.
 
 It exposes screen, window, pointer, keyboard, and clipboard tools through Sway-native commands. It is designed for Linux desktops running Sway on Wayland.
@@ -119,3 +123,7 @@ Build local distribution artifacts:
 python3 -m pip install ".[publish]"
 make build
 ```
+
+## License
+
+`computer-use-sway` is released under the MIT License. See [LICENSE](LICENSE).
