@@ -21,6 +21,17 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(result["serverInfo"]["name"], "computer-use-sway")
         self.assertEqual(result["capabilities"], {"tools": {}})
 
+    def test_initialize_carries_operating_instructions(self) -> None:
+        response = server.handle_message(
+            {"jsonrpc": "2.0", "id": 5, "method": "initialize", "params": {}}
+        )
+
+        instructions = response["result"]["instructions"]
+        self.assertIsInstance(instructions, str)
+        self.assertIn("never invent", instructions)
+        self.assertIn("verify the visible result", instructions)
+        self.assertIn("recording_status", instructions)
+
     def test_tools_list_exposes_expected_tools(self) -> None:
         response = server.handle_message(
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
