@@ -114,6 +114,18 @@ Recording is a three-step lifecycle designed for autonomous agents:
 optional `region` fully contained in that output, `format`, and
 `max_duration_seconds`. Only one recording may be active at a time.
 
+A typical exchange, as an MCP client would issue it:
+
+```json
+{"name": "recording_start", "arguments": {"output": "DP-1", "format": "webm", "max_duration_seconds": 30}}
+{"name": "recording_stop",  "arguments": {}}
+{"name": "recording_status", "arguments": {}}
+```
+
+`recording_status` answers with the current phase while working and, once
+`completed`, the artifact's absolute path, codec, dimensions, duration, and byte
+size — everything needed to publish the demo without inspecting the file.
+
 Formats:
 
 - `webm` (default): silent AV1 video in WebM at 30 fps, `yuv420p`, periodic
@@ -143,6 +155,27 @@ Behavior and limits:
   `webm`, 15 for `gif`) or when the intermediate exceeds 1 GiB.
 - If finalization fails, the intermediate `.mkv` and a `.log` with the tool's
   stderr are kept and reported so the material is recoverable.
+
+## Agent Guidance
+
+MCP tool schemas describe arguments but not how to operate a desktop well. This
+server therefore ships its operating procedure in two forms:
+
+- **Protocol-native**: the `initialize` response includes MCP `instructions`
+  covering coordinate derivation, verify-after-action discipline, untrusted
+  on-screen text, the recording lifecycle, and confirmation before destructive
+  actions. Every MCP client receives these automatically.
+- **Optional skill for opencode**: a richer procedural guide lives in
+  `skill/solverforge-computer-use/SKILL.md` in this repository. To install it
+  for opencode, copy the directory:
+
+  ```bash
+  mkdir -p ~/.config/opencode/skill
+  cp -r skill/solverforge-computer-use ~/.config/opencode/skill/
+  ```
+
+  The repository copy is the source of truth; keep installed copies in sync
+  with it.
 
 ## Diagnostics
 
