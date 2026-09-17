@@ -9,13 +9,15 @@ import glob
 import json
 import os
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -28,6 +30,22 @@ COMMAND_ENV = "COMPUTER_USE_SWAY_COMMAND"
 DEFAULT_TIMEOUT = 5.0
 TEXT_LIMIT = 10_000
 CLIPBOARD_LIMIT = 100_000
+RECORDING_FORMATS = ("webm", "gif")
+RECORDING_MIME_TYPES = {"webm": "video/webm", "gif": "image/gif"}
+RECORDING_MAX_DURATION_SECONDS = {"webm": 300.0, "gif": 15.0}
+RECORDING_DEFAULT_DURATION_SECONDS = {"webm": 60.0, "gif": 15.0}
+RECORDING_CAPTURE_CODEC = "libx264rgb"
+RECORDING_CAPTURE_FPS = 30
+RECORDING_VIDEO_FPS = 30
+RECORDING_GIF_FPS = 12
+RECORDING_GIF_MAX_WIDTH = 960
+RECORDING_MAX_INTERMEDIATE_BYTES = 1024**3
+RECORDING_DIR_MODE = 0o700
+RECORDING_FILE_MODE = 0o600
+RECORDING_STARTUP_PROBE_SECONDS = 1.0
+RECORDING_STOP_TIMEOUT_SECONDS = 10.0
+RECORDING_TERM_TIMEOUT_SECONDS = 5.0
+RECORDING_KILL_TIMEOUT_SECONDS = 5.0
 BUTTONS = {
     "left": "button1",
     "middle": "button2",
@@ -282,6 +300,178 @@ def validate_region(region: Any) -> dict[str, int] | None:
         raise ToolError("region width and height must be positive")
     validate_coordinates(x + width - 1, y + height - 1)
     return {"x": x, "y": y, "width": width, "height": height}
+
+
+@dataclass
+class RecordingJob:
+    id: str
+    fmt: str
+    output: str
+    region: dict[str, int] | None
+    width: int
+    height: int
+    max_duration: float
+    started_monotonic: float
+    started_utc: str
+    directory: Path
+    intermediate: Path
+    artifact: Path
+    log_path: Path
+    log_fd: int
+    encoder: str = "libsvtav1"
+    process: subprocess.Popen | None = None
+    thread: threading.Thread | None = None
+    phase: str = "recording"
+    detail: str | None = None
+    auto_stopped: bool = False
+    forced: bool = False
+    ended_monotonic: float | None = None
+    result: dict[str, Any] | None = None
+
+
+def strict_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ToolError(f"{name} must be an integer")
+    return value
+
+
+def parse_recording_format(value: Any) -> str:
+    fmt = "webm" if value is None else value
+    if not isinstance(fmt, str) or fmt not in RECORDING_FORMATS:
+        raise ToolError("format must be one of: " + ", ".join(RECORDING_FORMATS))
+    return fmt
+
+
+def parse_max_duration(value: Any, fmt: str) -> float:
+    if value is None:
+        return RECORDING_DEFAULT_DURATION_SECONDS[fmt]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ToolError("max_duration_seconds must be a number")
+    duration = float(value)
+    if duration <= 0:
+        raise ToolError("max_duration_seconds must be positive")
+    if duration > RECORDING_MAX_DURATION_SECONDS[fmt]:
+        raise ToolError(
+            f"max_duration_seconds must not exceed {RECORDING_MAX_DURATION_SECONDS[fmt]:g} for {fmt}"
+        )
+    return duration
+
+
+def select_recording_output(requested: Any) -> dict[str, Any]:
+    outputs = get_outputs()
+    names = [str(output.get("name")) for output in outputs]
+    if requested is not None:
+        if not isinstance(requested, str) or requested not in names:
+            raise ToolError(
+                f"unknown output {requested!r}; active outputs: {', '.join(names) or 'none'}"
+            )
+        return next(output for output in outputs if str(output.get("name")) == requested)
+    if len(outputs) == 1:
+        return outputs[0]
+    raise ToolError(
+        "multiple active outputs; provide output as one of: " + ", ".join(names)
+    )
+
+
+def validate_contained_region(region: Any, output_rect: dict[str, Any]) -> dict[str, int] | None:
+    if region is None:
+        return None
+    if not isinstance(region, dict):
+        raise ToolError("region must be an object with integer x, y, width, and height")
+    x = strict_int(region.get("x"), "region x")
+    y = strict_int(region.get("y"), "region y")
+    width = strict_int(region.get("width"), "region width")
+    height = strict_int(region.get("height"), "region height")
+    if width <= 0 or height <= 0:
+        raise ToolError("region width and height must be positive")
+    try:
+        rect_x = int(output_rect["x"])
+        rect_y = int(output_rect["y"])
+        rect_width = int(output_rect["width"])
+        rect_height = int(output_rect["height"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ToolError("selected output has invalid geometry") from exc
+    if (
+        x < rect_x
+        or y < rect_y
+        or x + width > rect_x + rect_width
+        or y + height > rect_y + rect_height
+    ):
+        raise ToolError(
+            f"region must be fully contained in output rect {rect_x},{rect_y} {rect_width}x{rect_height}"
+        )
+    return {"x": x, "y": y, "width": width, "height": height}
+
+
+def recording_directory() -> Path:
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime_dir:
+        raise ToolError("XDG_RUNTIME_DIR is not set; cannot create recording directory")
+    directory = Path(runtime_dir) / "computer-use-sway" / "recordings"
+    directory.mkdir(parents=True, exist_ok=True, mode=RECORDING_DIR_MODE)
+    os.chmod(directory, RECORDING_DIR_MODE)
+    return directory
+
+
+def create_private_file(path: Path) -> None:
+    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, RECORDING_FILE_MODE)
+    os.close(fd)
+
+
+def allocate_recording_paths(fmt: str) -> tuple[str, Path, Path, Path, int]:
+    directory = recording_directory()
+    for _ in range(5):
+        recording_id = secrets.token_hex(8)
+        intermediate = directory / f"{recording_id}.mkv"
+        artifact = directory / f"{recording_id}.{fmt}"
+        log_path = directory / f"{recording_id}.log"
+        try:
+            log_fd = os.open(log_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, RECORDING_FILE_MODE)
+            try:
+                create_private_file(intermediate)
+                create_private_file(artifact)
+            except FileExistsError:
+                os.close(log_fd)
+                log_path.unlink(missing_ok=True)
+                raise
+            return recording_id, intermediate, artifact, log_path, log_fd
+        except FileExistsError:
+            continue
+    raise ToolError("could not allocate unique recording paths")
+
+
+def new_recording_job(arguments: dict[str, Any]) -> RecordingJob:
+    fmt = parse_recording_format(arguments.get("format"))
+    output = select_recording_output(arguments.get("output"))
+    region = validate_contained_region(arguments.get("region"), output.get("rect") or {})
+    max_duration = parse_max_duration(arguments.get("max_duration_seconds"), fmt)
+    output_rect = output.get("rect") or {}
+    if region is not None:
+        width = region["width"]
+        height = region["height"]
+    else:
+        try:
+            width = int(output_rect["width"])
+            height = int(output_rect["height"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ToolError(f"output {output.get('name')} has invalid geometry") from exc
+    recording_id, intermediate, artifact, log_path, log_fd = allocate_recording_paths(fmt)
+    return RecordingJob(
+        id=recording_id,
+        fmt=fmt,
+        output=str(output.get("name")),
+        region=region,
+        width=width,
+        height=height,
+        max_duration=max_duration,
+        started_monotonic=time.monotonic(),
+        started_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        directory=intermediate.parent,
+        intermediate=intermediate,
+        artifact=artifact,
+        log_path=log_path,
+        log_fd=log_fd,
+    )
 
 
 def png_dimensions(data: bytes) -> dict[str, int] | None:
