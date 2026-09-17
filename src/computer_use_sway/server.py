@@ -582,6 +582,201 @@ def sway_cursor(*parts: str) -> None:
     run_command(["swaymsg", "-t", "command", "seat", seat, "cursor", *parts])
 
 
+RECORDING_ENCODER_PREFERENCE = ("libsvtav1", "libaom-av1")
+RECORDING_LOG_TAIL_BYTES = 500
+
+
+def recording_capture_argv(job: RecordingJob) -> list[str]:
+    argv = ["wf-recorder", "-o", job.output]
+    if job.region is not None:
+        argv.extend(
+            [
+                "-g",
+                f"{job.region['x']},{job.region['y']} {job.region['width']}x{job.region['height']}",
+            ]
+        )
+    argv.extend(
+        [
+            "-f",
+            str(job.intermediate),
+            "-c",
+            RECORDING_CAPTURE_CODEC,
+            "-r",
+            str(RECORDING_CAPTURE_FPS),
+            "-p",
+            "preset=ultrafast",
+            "-p",
+            "crf=0",
+            "-y",
+        ]
+    )
+    return argv
+
+
+def choose_video_encoder() -> str:
+    result = run_command(["ffmpeg", "-hide_banner", "-encoders"], timeout=10.0)
+    for name in RECORDING_ENCODER_PREFERENCE:
+        if re.search(rf"^\s*V\S*\s+{re.escape(name)}\s", result.text, re.MULTILINE):
+            return name
+    raise ToolError(
+        "no AV1 encoder available in ffmpeg (need one of: "
+        + ", ".join(RECORDING_ENCODER_PREFERENCE)
+        + ")"
+    )
+
+
+def recording_webm_argv(job: RecordingJob) -> list[str]:
+    filters = [
+        f"fps={RECORDING_VIDEO_FPS}",
+        "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+        "format=yuv420p",
+    ]
+    argv = [
+        "ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(job.intermediate),
+        "-an",
+        "-sn",
+        "-dn",
+        "-map_metadata",
+        "-1",
+        "-vf",
+        ",".join(filters),
+        "-c:v",
+        job.encoder,
+    ]
+    if job.encoder == "libsvtav1":
+        argv.extend(["-crf", "28", "-preset", "8"])
+    else:
+        argv.extend(["-crf", "30", "-cpu-used", "6", "-row-mt", "1", "-tiles", "2x2"])
+    argv.extend(
+        [
+            "-force_key_frames",
+            "expr:gte(t,n_forced*2)",
+            "-f",
+            "webm",
+            str(job.artifact),
+        ]
+    )
+    return argv
+
+
+def recording_gif_argv(job: RecordingJob, capture_width: int) -> list[str]:
+    filters = [f"fps={RECORDING_GIF_FPS}"]
+    if capture_width > RECORDING_GIF_MAX_WIDTH:
+        filters.append(f"scale={RECORDING_GIF_MAX_WIDTH}:-1:flags=lanczos")
+    filters.append(
+        "split[a][b];[a]palettegen=stats_mode=diff[p];"
+        "[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle"
+    )
+    return [
+        "ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(job.intermediate),
+        "-vf",
+        ",".join(filters),
+        "-loop",
+        "0",
+        "-an",
+        "-sn",
+        "-dn",
+        "-map_metadata",
+        "-1",
+        "-f",
+        "gif",
+        str(job.artifact),
+    ]
+
+
+def probe_media(path: Path) -> dict[str, Any]:
+    result = run_command(
+        ["ffprobe", "-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(path)],
+        timeout=30.0,
+    )
+    try:
+        return json.loads(result.text)
+    except json.JSONDecodeError as exc:
+        raise ToolError(f"ffprobe returned invalid JSON for {path.name}") from exc
+
+
+def probe_video_stream(path: Path) -> dict[str, Any]:
+    probe = probe_media(path)
+    video = [stream for stream in probe.get("streams") or [] if stream.get("codec_type") == "video"]
+    if not video:
+        raise ToolError(f"{path.name} contains no video stream")
+    return video[0]
+
+
+def parse_frame_rate(rate: Any) -> float:
+    try:
+        numerator, denominator = str(rate).split("/", 1)
+        denominator_value = float(denominator)
+        if denominator_value == 0:
+            return 0.0
+        return float(numerator) / denominator_value
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def validate_recording_artifact(job: RecordingJob) -> dict[str, Any]:
+    probe = probe_media(job.artifact)
+    format_name = str((probe.get("format") or {}).get("format_name") or "")
+    streams = probe.get("streams") or []
+    video = [stream for stream in streams if stream.get("codec_type") == "video"]
+    audio = [stream for stream in streams if stream.get("codec_type") == "audio"]
+    if audio:
+        raise ToolError("artifact must not contain audio streams")
+    if job.fmt == "webm":
+        if "webm" not in format_name:
+            raise ToolError(f"artifact is not WebM (format: {format_name or 'unknown'})")
+        if len(video) != 1 or video[0].get("codec_name") != "av1":
+            raise ToolError("artifact must contain exactly one AV1 video stream")
+    else:
+        if "gif" not in format_name:
+            raise ToolError(f"artifact is not a GIF (format: {format_name or 'unknown'})")
+        if len(video) != 1:
+            raise ToolError("artifact must contain exactly one image stream")
+    try:
+        duration = float((probe.get("format") or {}).get("duration") or 0.0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    if duration <= 0.0:
+        raise ToolError("artifact has no readable duration")
+    return {
+        "codec": str(video[0].get("codec_name")),
+        "container": job.fmt,
+        "mime_type": RECORDING_MIME_TYPES[job.fmt],
+        "width": int(video[0].get("width") or 0),
+        "height": int(video[0].get("height") or 0),
+        "duration_seconds": round(duration, 3),
+        "frame_rate": round(parse_frame_rate(video[0].get("avg_frame_rate")), 3),
+    }
+
+
+def finalize_recording(job: RecordingJob) -> dict[str, Any]:
+    capture = probe_video_stream(job.intermediate)
+    try:
+        capture_width = int(capture.get("width") or 0)
+    except (TypeError, ValueError):
+        capture_width = 0
+    if job.fmt == "webm":
+        argv = recording_webm_argv(job)
+    else:
+        argv = recording_gif_argv(job, capture_width)
+    run_command(argv, timeout=600.0)
+    return validate_recording_artifact(job)
+
+
 def tool_screen_info(_: dict[str, Any]) -> list[dict[str, str]]:
     require_binaries(["swaymsg", "grim", "wtype", "wl-copy", "wl-paste"])
     outputs = get_outputs()
