@@ -12,6 +12,7 @@ import re
 import secrets
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -777,6 +778,311 @@ def finalize_recording(job: RecordingJob) -> dict[str, Any]:
     return validate_recording_artifact(job)
 
 
+class RecordingManager:
+    """Owns the single capture/finalization lifecycle for this server process."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._job: RecordingJob | None = None
+
+    # -- helpers ---------------------------------------------------------
+
+    @staticmethod
+    def _intermediate_size(job: RecordingJob) -> int:
+        try:
+            return job.intermediate.stat().st_size
+        except OSError:
+            return 0
+
+    @staticmethod
+    def _close_log_fd(job: RecordingJob) -> None:
+        if job.log_fd >= 0:
+            try:
+                os.close(job.log_fd)
+            except OSError:
+                pass
+            job.log_fd = -1
+
+    @staticmethod
+    def _log_tail(job: RecordingJob) -> str:
+        try:
+            data = job.log_path.read_bytes()
+        except OSError:
+            return ""
+        return data[-RECORDING_LOG_TAIL_BYTES:].decode("utf-8", errors="replace").strip()
+
+    @staticmethod
+    def _signal_group(process: subprocess.Popen, sig: int) -> None:
+        if process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    @staticmethod
+    def _wait_exited(process: subprocess.Popen, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                return True
+            time.sleep(0.05)
+        return process.poll() is not None
+
+    def _terminate_process_group(self, process: subprocess.Popen) -> bool:
+        if process.poll() is not None:
+            return True
+        escalations = (
+            (signal.SIGINT, RECORDING_STOP_TIMEOUT_SECONDS, True),
+            (signal.SIGTERM, RECORDING_TERM_TIMEOUT_SECONDS, False),
+            (signal.SIGKILL, RECORDING_KILL_TIMEOUT_SECONDS, False),
+        )
+        for sig, timeout, was_graceful in escalations:
+            if process.poll() is not None:
+                return True
+            self._signal_group(process, sig)
+            if self._wait_exited(process, timeout):
+                return was_graceful
+        if process.poll() is None:
+            try:
+                process.wait(timeout=10.0)
+            except subprocess.TimeoutExpired:
+                pass
+        return False
+
+    @staticmethod
+    def _discard_intermediate(job: RecordingJob) -> None:
+        job.intermediate.unlink(missing_ok=True)
+
+    def _fail(self, job: RecordingJob, message: str) -> None:
+        job.phase = "failed"
+        job.detail = f"{job.detail}; {message}" if job.detail else message
+        job.artifact.unlink(missing_ok=True)
+
+    def _cleanup_failed_start(self, job: RecordingJob) -> None:
+        self._close_log_fd(job)
+        for path in (job.intermediate, job.artifact, job.log_path):
+            path.unlink(missing_ok=True)
+
+    # -- lifecycle -------------------------------------------------------
+
+    def start(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        require_binaries(["wf-recorder", "ffmpeg", "ffprobe"])
+        with self._lock:
+            job = self._job
+            if job is not None and job.phase in {"recording", "stopping", "processing"}:
+                raise ToolError(
+                    f"a recording is already active (phase: {job.phase}); call recording_status"
+                )
+            new_job = new_recording_job(arguments)
+            if new_job.fmt == "webm":
+                new_job.encoder = choose_video_encoder()
+            try:
+                new_job.process = subprocess.Popen(
+                    recording_capture_argv(new_job),
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=new_job.log_fd,
+                    start_new_session=True,
+                )
+            except (OSError, ValueError) as exc:
+                self._cleanup_failed_start(new_job)
+                raise ToolError(f"failed to launch wf-recorder: {exc}") from exc
+            time.sleep(RECORDING_STARTUP_PROBE_SECONDS)
+            if new_job.process.poll() is not None:
+                detail = self._log_tail(new_job)
+                self._cleanup_failed_start(new_job)
+                raise ToolError(
+                    f"wf-recorder exited during startup (code {new_job.process.returncode})"
+                    + (f": {detail}" if detail else "")
+                )
+            self._job = new_job
+            watchdog = threading.Thread(target=self._watchdog, args=(new_job,), daemon=True)
+            new_job.thread = watchdog
+            watchdog.start()
+            return self._summary(new_job)
+
+    def status(self) -> dict[str, Any]:
+        with self._lock:
+            job = self._job
+            if job is None:
+                return {"phase": "idle"}
+            if job.phase == "recording":
+                process = job.process
+                if process is not None and process.poll() is not None:
+                    job.ended_monotonic = time.monotonic()
+                    self._close_log_fd(job)
+                    if process.returncode != 0:
+                        tail = self._log_tail(job)
+                        self._fail(
+                            job,
+                            f"wf-recorder exited unexpectedly (code {process.returncode})"
+                            + (f": {tail}" if tail else ""),
+                        )
+                    elif self._intermediate_size(job) == 0:
+                        self._fail(job, "capture produced no data")
+                    else:
+                        job.phase = "processing"
+                        job.thread = threading.Thread(
+                            target=self._finalize, args=(job,), daemon=True
+                        )
+                        job.thread.start()
+            return self._summary(job)
+
+    def stop(self) -> dict[str, Any]:
+        with self._lock:
+            job = self._job
+            if job is None or job.phase != "recording":
+                phase = job.phase if job is not None else "idle"
+                raise ToolError(f"no active recording to stop (phase: {phase})")
+            self._end_capture(job)
+            return self._summary(job)
+
+    def shutdown(self) -> None:
+        with self._lock:
+            job = self._job
+            if job is None or job.phase != "recording":
+                return
+            if job.detail is None:
+                job.detail = "capture ended at server shutdown"
+            self._end_capture(job)
+
+    # -- internals -------------------------------------------------------
+
+    def _end_capture(self, job: RecordingJob) -> None:
+        """Stop the recorder and begin finalization. Caller must hold the lock."""
+        job.phase = "stopping"
+        process = job.process
+        if process is not None and process.poll() is None:
+            job.forced = not self._terminate_process_group(process)
+        job.ended_monotonic = time.monotonic()
+        self._close_log_fd(job)
+        if self._intermediate_size(job) == 0:
+            self._fail(job, "capture produced no data")
+            return
+        job.phase = "processing"
+        job.thread = threading.Thread(target=self._finalize, args=(job,), daemon=True)
+        job.thread.start()
+
+    def _watchdog(self, job: RecordingJob) -> None:
+        deadline = job.started_monotonic + job.max_duration
+        while True:
+            with self._lock:
+                if self._job is not job or job.phase != "recording":
+                    return
+                exceeded_time = time.monotonic() >= deadline
+                exceeded_size = self._intermediate_size(job) > RECORDING_MAX_INTERMEDIATE_BYTES
+                if exceeded_time or exceeded_size:
+                    job.auto_stopped = True
+                    if exceeded_size and not exceeded_time:
+                        job.detail = "recording stopped: intermediate size limit reached"
+                    self._end_capture(job)
+                    return
+            time.sleep(0.5)
+
+    def _finalize(self, job: RecordingJob) -> None:
+        try:
+            summary = finalize_recording(job)
+            job.artifact.chmod(RECORDING_FILE_MODE)
+        except ToolError as exc:
+            with self._lock:
+                self._fail(job, f"finalization failed: {exc}")
+            return
+        except Exception as exc:
+            eprint(f"unexpected finalization error for {job.id}: {exc}")
+            with self._lock:
+                self._fail(job, "unexpected finalization failure; see server log")
+            return
+        capture_seconds = max(
+            (job.ended_monotonic or time.monotonic()) - job.started_monotonic, 0.0
+        )
+        try:
+            artifact_bytes = job.artifact.stat().st_size
+        except OSError:
+            artifact_bytes = 0
+        result = {
+            "id": job.id,
+            "phase": "completed",
+            "format": job.fmt,
+            "output": job.output,
+            "region": job.region,
+            "path": str(job.artifact),
+            "bytes": artifact_bytes,
+            "capture_seconds": round(capture_seconds, 3),
+            "graceful": not job.forced,
+            "audio_included": False,
+            "cursor_included": True,
+            "auto_stopped": job.auto_stopped,
+            **summary,
+        }
+        with self._lock:
+            job.result = result
+            job.phase = "completed"
+            self._discard_intermediate(job)
+            job.log_path.unlink(missing_ok=True)
+
+    def _summary(self, job: RecordingJob) -> dict[str, Any]:
+        base = {
+            "id": job.id,
+            "format": job.fmt,
+            "output": job.output,
+            "region": job.region,
+            "audio_included": False,
+            "cursor_included": True,
+        }
+        if job.phase == "recording":
+            return {
+                **base,
+                "phase": "recording",
+                "width": job.width,
+                "height": job.height,
+                "elapsed_seconds": round(time.monotonic() - job.started_monotonic, 3),
+                "max_duration_seconds": job.max_duration,
+                "bytes": self._intermediate_size(job),
+            }
+        if job.phase == "stopping":
+            return {
+                **base,
+                "phase": "stopping",
+                "capture_seconds": round(
+                    (job.ended_monotonic or time.monotonic()) - job.started_monotonic, 3
+                ),
+            }
+        if job.phase == "processing":
+            return {
+                **base,
+                "phase": "processing",
+                "capture_seconds": round(
+                    (job.ended_monotonic or time.monotonic()) - job.started_monotonic, 3
+                ),
+                "note": "finalizing artifact; poll recording_status until completed or failed",
+            }
+        if job.phase == "completed":
+            return dict(job.result or {"id": job.id, "phase": "completed"})
+        return {
+            **base,
+            "phase": "failed",
+            "detail": job.detail or "recording failed",
+            "intermediate_path": str(job.intermediate) if job.intermediate.exists() else None,
+            "log_path": str(job.log_path) if job.log_path.exists() else None,
+        }
+
+
+RECORDINGS = RecordingManager()
+
+
+def tool_recording_start(arguments: dict[str, Any]) -> list[dict[str, str]]:
+    return json_text(RECORDINGS.start(arguments))
+
+
+def tool_recording_status(_: dict[str, Any]) -> list[dict[str, str]]:
+    return json_text(RECORDINGS.status())
+
+
+def tool_recording_stop(_: dict[str, Any]) -> list[dict[str, str]]:
+    return json_text(RECORDINGS.stop())
+
+
 def tool_screen_info(_: dict[str, Any]) -> list[dict[str, str]]:
     require_binaries(["swaymsg", "grim", "wtype", "wl-copy", "wl-paste"])
     outputs = get_outputs()
@@ -803,7 +1109,7 @@ def tool_screen_info(_: dict[str, Any]) -> list[dict[str, str]]:
         "focused_window": get_focused_window(),
         "binaries": {
             name: shutil.which(name)
-            for name in ("swaymsg", "grim", "wtype", "wl-copy", "wl-paste")
+            for name in ("swaymsg", "grim", "wtype", "wl-copy", "wl-paste", "wf-recorder", "ffmpeg", "ffprobe")
         },
     }
     return json_text(info)
@@ -1064,6 +1370,9 @@ TOOLS = {
     "key": tool_key,
     "clipboard_set": tool_clipboard_set,
     "clipboard_get": tool_clipboard_get,
+    "recording_start": tool_recording_start,
+    "recording_status": tool_recording_status,
+    "recording_stop": tool_recording_stop,
 }
 
 
@@ -1240,6 +1549,72 @@ def tool_specs() -> list[dict[str, Any]]:
                 "additionalProperties": False,
             },
         },
+        {
+            "name": "recording_start",
+            "description": (
+                "Start recording an active Sway output (or a region within it) into a silent "
+                "artifact: AV1 WebM video, or a constrained GIF fallback. Returns immediately; "
+                "call recording_stop to finish, then poll recording_status until the phase is "
+                "completed or failed. The pointer cursor is always included."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "output": {
+                        "type": "string",
+                        "description": "Exact Sway output name; inferred when exactly one output is active.",
+                    },
+                    "region": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "x": {"type": "integer"},
+                            "y": {"type": "integer"},
+                            "width": {"type": "integer"},
+                            "height": {"type": "integer"},
+                        },
+                        "required": ["x", "y", "width", "height"],
+                        "additionalProperties": False,
+                        "description": "Region fully contained in the selected output.",
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["webm", "gif"],
+                        "default": "webm",
+                        "description": (
+                            "webm: silent AV1 WebM at 30 fps; gif: constrained fallback at 12 fps, "
+                            "960 px maximum width."
+                        ),
+                    },
+                    "max_duration_seconds": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "maximum": 300,
+                        "description": (
+                            "Automatic stop deadline. Defaults to 60 (webm) or 15 (gif); "
+                            "GIF recordings are capped at 15 seconds."
+                        ),
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "recording_status",
+            "description": (
+                "Report the recording lifecycle phase (idle, recording, stopping, processing, "
+                "completed, failed) plus live progress or final artifact metadata."
+            ),
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+        {
+            "name": "recording_stop",
+            "description": (
+                "Gracefully stop the active recording and begin finalizing the requested "
+                "artifact. Returns the stopping/processing state; poll recording_status for "
+                "the final artifact path and metadata."
+            ),
+            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
     ]
 
 
@@ -1319,22 +1694,33 @@ def handle_message(message: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def run_mcp_server() -> int:
-    for line in sys.stdin:
-        line = line.strip()
-        if not line:
-            continue
+    def terminate(_signum: int, _frame: Any) -> None:
+        raise SystemExit(0)
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
         try:
-            message = json.loads(line)
-        except json.JSONDecodeError as exc:
-            response = {
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {"code": -32700, "message": f"Parse error: {exc}"},
-            }
-        else:
-            response = handle_message(message)
-        if response is not None:
-            print(json.dumps(response, separators=(",", ":")), flush=True)
+            signal.signal(sig, terminate)
+        except (OSError, ValueError):
+            pass
+    try:
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError as exc:
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32700, "message": f"Parse error: {exc}"},
+                }
+            else:
+                response = handle_message(message)
+            if response is not None:
+                print(json.dumps(response, separators=(",", ":")), flush=True)
+    finally:
+        RECORDINGS.shutdown()
     return 0
 
 
@@ -1394,7 +1780,18 @@ def uninstall_codex_mcp() -> int:
 
 def self_test() -> int:
     checks: list[tuple[str, str]] = []
-    for name in ("python3", "swaymsg", "grim", "wtype", "wl-copy", "wl-paste", "codex"):
+    for name in (
+        "python3",
+        "swaymsg",
+        "grim",
+        "wtype",
+        "wl-copy",
+        "wl-paste",
+        "wf-recorder",
+        "ffmpeg",
+        "ffprobe",
+        "codex",
+    ):
         checks.append((name, shutil.which(name) or "missing"))
     require_binaries(["swaymsg", "grim", "wtype", "wl-copy", "wl-paste"])
     require_session()
@@ -1442,7 +1839,18 @@ def doctor() -> int:
         },
         "binaries": {
             name: shutil.which(name)
-            for name in ("python3", "swaymsg", "grim", "wtype", "wl-copy", "wl-paste", "codex")
+            for name in (
+                "python3",
+                "swaymsg",
+                "grim",
+                "wtype",
+                "wl-copy",
+                "wl-paste",
+                "wf-recorder",
+                "ffmpeg",
+                "ffprobe",
+                "codex",
+            )
         },
         "session": None,
         "codex_mcp": None,

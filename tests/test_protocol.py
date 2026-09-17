@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -29,6 +30,25 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn("screen_info", names)
         self.assertIn("screenshot", names)
         self.assertIn("clipboard_get", names)
+        self.assertIn("recording_start", names)
+        self.assertIn("recording_status", names)
+        self.assertIn("recording_stop", names)
+
+    def test_recording_tools_are_silent_and_closed(self) -> None:
+        response = server.handle_message(
+            {"jsonrpc": "2.0", "id": 4, "method": "tools/list"}
+        )
+
+        specs = {tool["name"]: tool for tool in response["result"]["tools"]}
+        for name in ("recording_start", "recording_status", "recording_stop"):
+            schema = specs[name]["inputSchema"]
+            self.assertIs(schema.get("additionalProperties"), False, name)
+            self.assertNotIn("audio", json.dumps(schema), name)
+
+        start_schema = specs["recording_start"]["inputSchema"]
+        self.assertEqual(start_schema["properties"]["format"]["enum"], ["webm", "gif"])
+        region = start_schema["properties"]["region"]
+        self.assertEqual(region["required"], ["x", "y", "width", "height"])
 
     def test_unknown_tool_returns_tool_error_result(self) -> None:
         response = server.handle_message(
