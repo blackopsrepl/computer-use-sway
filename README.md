@@ -8,6 +8,18 @@
 
 It exposes screen, window, pointer, keyboard, clipboard, and recording tools through Sway-native commands. It is designed for Linux desktops running Sway on Wayland.
 
+## Demo
+
+A 43-second narrated tour, produced by this server itself: the screen shows
+`computer-use-sway` driving a live terminal — moving the pointer, typing
+commands, round-tripping the clipboard, and scrolling — while the narration is
+anchored to the recording timeline, synthesized, and muxed over the copied AV1
+video.
+
+<video controls loop src="assets/computer-use-sway-demo.webm"></video>
+
+[Watch the demo](assets/computer-use-sway-demo.webm)
+
 ## Capabilities
 
 - Inspect active outputs, seats, focused windows, and required binaries.
