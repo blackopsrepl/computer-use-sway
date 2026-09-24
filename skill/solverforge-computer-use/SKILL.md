@@ -127,6 +127,7 @@ Canonical call:
   "voice": "en-US-AriaNeural",
   "fit": "natural",
   "offset_ms": 0,
+  "subtitles": true,
   "segments": [
     {"anchor": {"event_id": 1}, "text": "First I open the settings panel."},
     {"anchor": {"event_id": 4}, "text": "Then I run the solver."},
@@ -144,6 +145,9 @@ Canonical call:
   the text or use `fit: "compress"`; do not re-record just to make it fit.
 - The artifact is only as long as the longer of video and aligned audio, so keep
   total speech within `capture_seconds` for a clean, video-length result.
+- Captions are on by default: the server burns styled subtitles from your segment
+  text, synced to each segment's scheduled window. Pass `subtitles: false` for a
+  caption-free video, which keeps a fast stream copy instead of re-encoding.
 
 ### Engine choice and privacy
 

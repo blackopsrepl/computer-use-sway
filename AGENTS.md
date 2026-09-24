@@ -31,6 +31,7 @@ Guidance for coding agents working in this repository.
 - `timeline.py`: recording-relative event timeline and sidecar.
 - `tts.py`: pluggable `edge-tts`/`piper` engines and audio parsing.
 - `narration.py`: narration contract, anchor resolution, scheduling, and muxing.
+- `subtitles.py`: styled ASS captions and the burn-in mux argv.
 - `scenes.py`: approximate scene-cut and OCR fallback anchors.
 - `manager.py`: the single recording lifecycle owner and `RECORDINGS`.
 - `tools.py` / `specs.py`: MCP tool wrappers and JSON schemas.

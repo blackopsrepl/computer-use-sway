@@ -71,7 +71,7 @@ Recording tools:
 | `recording_status` | none | current phase and metadata |
 | `recording_stop` | none | stopping/processing summary |
 | `recording_timeline` | none | timeline document |
-| `recording_voiceover` | `segments`, `engine`, `voice`, `offset_ms`, `fit`, `tail_ms` | narrating summary |
+| `recording_voiceover` | `segments`, `engine`, `voice`, `offset_ms`, `fit`, `tail_ms`, `subtitles` | narrating summary |
 | `recording_scenes` | `threshold`, `max_scenes`, `ocr` | approximate scene anchors |
 
 Input maps to Sway seat cursor commands and `wtype`; clipboard uses `wl-copy` and
@@ -140,7 +140,8 @@ action/observation call:
   "voice": null,
   "offset_ms": 0,
   "fit": "natural",
-  "tail_ms": 300
+  "tail_ms": 300,
+  "subtitles": true
 }
 ```
 
@@ -161,13 +162,18 @@ action/observation call:
   resampled to 48 kHz stereo PCM; all times are integer milliseconds.
 - Muxing copies the video and adds one Opus track:
   `-map 0:v:0 -map 1:a:0 -c:v copy -c:a libopus -b:a 96k -ac 2 -ar 48000`.
+- Captions are on by default: the narration text is burned in as styled ASS
+  captions (white, bold, bottom-centred, boxed) synced to each segment's
+  scheduled window. Burn-in re-encodes the video with the same AV1 encoder;
+  `subtitles: false` keeps the stream-copy path and produces a caption-free
+  video.
 - GIF is refused. A failed narration returns the job to `completed` with
   `narration.error`; the silent artifact is intact and re-narration is safe
   because the video is copied and prior audio dropped.
 
 Completed result additions: `audio_included`, `timeline_path`,
 `timeline_event_count`, and `narration` (`engine`, `voice`, `offset_ms`, `fit`,
-`segment_count`, `total_duration_ms`, and per-segment `start_ms`,
+`subtitles`, `segment_count`, `total_duration_ms`, and per-segment `start_ms`,
 `duration_ms`, `lead_silence_ms`, `shift_ms`, `tempo`, `compressed`,
 `word_count`).
 
@@ -188,7 +194,7 @@ finished artifacts promptly.
 - `<id>.webm` or `<id>.gif`: final artifact
 - `<id>.timeline.json`: timeline sidecar
 - `<id>.log`: recorder stderr (kept on failure)
-- `<id>.narration/`: transient TTS/track work directory
+- `<id>.narration/`: transient TTS/track work directory (`captions.ass` included)
 - `<id>.narrated.webm.part`: transient mux output, atomically renamed in place
 
 ## Diagnostics And CLI

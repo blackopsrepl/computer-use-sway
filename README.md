@@ -13,8 +13,8 @@ It exposes screen, window, pointer, keyboard, clipboard, and recording tools thr
 A 43-second narrated tour, produced by this server itself: the screen shows
 `computer-use-sway` driving a live terminal — moving the pointer, typing
 commands, round-tripping the clipboard, and scrolling — while the narration is
-anchored to the recording timeline, synthesized, and muxed over the copied AV1
-video.
+anchored to the recording timeline, synthesized, and mixed over the video with
+the spoken words rendered as burned-in captions.
 
 <video controls loop src="assets/computer-use-sway-demo.webm"></video>
 
@@ -229,13 +229,17 @@ to the timeline, and muxes it. Use `recording_timeline` first to pick anchors.
   overlap, preserving natural speech) or `compress` (a segment that would
   overrun the next anchor is time-compressed with `atempo`).
 - `tail_ms` (default 300) extends the audio track past the last word.
+- `subtitles` (default `true`) burns styled captions of the narration into the
+  video, synced to each segment. Because captions are drawn into the frame, this
+  re-encodes the video with the same AV1 encoder; set `subtitles: false` to keep
+  the stream-copy path and produce a caption-free video.
 - Narration starts an asynchronous `narrating` phase; poll `recording_status`
   until `completed`. On success the result gains `audio_included: true` and a
   `narration` block with per-segment `start_ms`, `duration_ms`, `shift_ms`,
   `compressed`, and `word_count`. On failure the recording reverts to
   `completed` with `narration.error`.
-- The AV1 video stream is copied, never re-encoded (`-c:v copy`); the added
-  track is Opus. The artifact path is unchanged.
+- With subtitles disabled the AV1 video stream is copied, never re-encoded
+  (`-c:v copy`); the added track is Opus. The artifact path is unchanged.
 - **GIF cannot carry audio.** `recording_voiceover` refuses `format=gif` and
   tells you to record `webm`.
 

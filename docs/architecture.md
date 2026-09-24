@@ -99,7 +99,9 @@ The server is one Python package split into focused modules, each under the
   parsing, and the narration constants. Depends on `core`, `media`.
 - `narration.py`: narration contract, anchor resolution, deterministic
   scheduling, track build, mux argv, and `perform_narration`. Depends on `core`,
-  `recording`, `tts`.
+  `recording`, `subtitles`, `tts`.
+- `subtitles.py`: styled ASS caption document, timestamp/escaping helpers, and
+  the burn-in mux argv (re-encodes the video). Depends on `recording`, `tts`.
 - `scenes.py`: approximate scene-cut detection and OCR fallback anchors.
 - `manager.py`: `RecordingManager` and the module-level `RECORDINGS` singleton;
   the only owner of recording state. Depends on every other runtime module.
