@@ -23,7 +23,7 @@ from typing import Any
 
 
 SERVER_NAME = "computer-use-sway"
-SERVER_VERSION = "0.2.0"
+SERVER_VERSION = "0.2.1"
 MCP_PROTOCOL_VERSION = "2024-11-05"
 COMMAND_NAME = "computer-use-sway"
 COMMAND_ENV = "COMPUTER_USE_SWAY_COMMAND"
