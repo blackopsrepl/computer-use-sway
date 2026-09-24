@@ -10,15 +10,18 @@ It exposes screen, window, pointer, keyboard, clipboard, and recording tools thr
 
 ## Demo
 
-A 43-second narrated tour, produced by this server itself: the screen shows
+A 61-second narrated tour, produced by this server itself: the screen shows
 `computer-use-sway` driving a live terminal — moving the pointer, typing
 commands, round-tripping the clipboard, and scrolling — while the narration is
 anchored to the recording timeline, synthesized, and mixed over the video with
 the spoken words rendered as burned-in captions.
 
-<video controls loop src="assets/computer-use-sway-demo.webm"></video>
+![computer-use-sway driving a live terminal with burned-in captions](assets/computer-use-sway-demo.gif)
 
-[Watch the demo](assets/computer-use-sway-demo.webm)
+Full narrated video:
+
+- [MP4, H.264/AAC](assets/computer-use-sway-demo.mp4) — plays everywhere, including X/Twitter
+- [WebM, AV1/Opus](assets/computer-use-sway-demo.webm) — the server's native artifact
 
 ## Capabilities
 
