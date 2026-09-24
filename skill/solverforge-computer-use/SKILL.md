@@ -1,6 +1,6 @@
 ---
 name: solverforge-computer-use
-description: Use ONLY when controlling the Sway/Wayland desktop through the solverforge-computer-use MCP tools (screen_info, screenshot, window_tree, focus_window, move_pointer, click, drag, scroll, type_text, key, clipboard_set, clipboard_get, recording_start, recording_status, recording_stop, recording_timeline, recording_voiceover, recording_scenes). Covers GUI automation, screenshots, window focus, clicking, typing, key presses, scrolling, clipboard, screen recording, and timeline-aligned narration. Do not use mcp_cua_repl, browser-tab APIs, getAXState/getApp/getTab, or the generic JavaScript CUA workflow for Sway.
+description: Use ONLY when controlling the Sway/Wayland desktop through the solverforge-computer-use MCP tools (screen_info, screenshot, window_tree, focus_window, move_pointer, click, drag, scroll, type_text, key, clipboard_set, clipboard_get, recording_start, recording_status, recording_stop, recording_timeline, recording_voiceover, recording_scenes). Covers GUI automation, screenshots, window focus, clicking, typing, key presses, scrolling, clipboard, screen recording, and narrated screencasts. Trigger on "record a demo/screencast/walkthrough/explainer", "voiceover", "narration", "show how ... works". Do not use mcp_cua_repl, browser-tab APIs, getAXState/getApp/getTab, or the generic JavaScript CUA workflow for Sway.
 ---
 
 # SolverForge Computer Use (Sway)
@@ -11,8 +11,25 @@ MCP server that talks to `SWAYSOCK`, `swaymsg`, `grim`, `wtype`, and `wf-recorde
 
 The server also delivers the short version of the operating procedure below to
 MCP clients natively as `instructions` in its `initialize` response. This skill
-adds the fuller procedure, the recording workflow, and the narrated-recording
+adds the fuller procedure, the recording workflow, and the narrated-screencast
 workflow.
+
+## Decide the recording mode before you start
+
+- The user wants to explain or teach, or asks for a "demo", "screencast",
+  "walkthrough", "explainer", "voiceover", or "show how X works" -> **narrated
+  webm**. This is the default for demos.
+- The user wants visual evidence only, or says silent -> **silent webm**.
+- The result must play where `<video>` cannot (some email/chat clients) and is
+  short -> **gif**. A gif is always silent; never choose gif when sound matters.
+- If unsure, record `webm`: you can always leave it silent by skipping
+  narration, but you cannot add audio to a gif.
+
+Hard order for any narrated recording:
+`recording_start` -> perform the demo -> `recording_stop` -> poll to
+`completed` -> `recording_timeline` -> author segments -> `recording_voiceover`
+-> poll to `completed` -> verify. Do not author anchors before the timeline
+exists, and do not call `recording_voiceover` before the phase is `completed`.
 
 ## Tools
 
@@ -26,8 +43,7 @@ workflow.
 - `scroll`: scroll using pointer-wheel events.
 - `type_text`: type into the focused Wayland application.
 - `key`: send a key with optional `ctrl`, `shift`, `alt`, or `logo` modifiers.
-- `clipboard_set`: set Wayland text clipboard.
-- `clipboard_get`: read Wayland text clipboard.
+- `clipboard_set` / `clipboard_get`: set/read Wayland text clipboard.
 - `recording_start`: begin recording one output (or a region inside it) as a
   silent AV1 WebM video or a constrained GIF.
 - `recording_status`: report the recording lifecycle phase and artifact metadata.
@@ -60,14 +76,15 @@ orientation, not a contract.
 8. Never bypass browser security warnings or other safety barriers.
 9. Report the final visible result and any unresolved limitation.
 
-## Recording workflow
+## Recording (the capture step)
 
 1. `recording_start` with `output` (inferred when exactly one output is active),
    an optional `region` fully inside that output, `format` (`webm` or `gif`),
-   and `max_duration_seconds`.
+   and `max_duration_seconds`. For a narrated demo, record `webm` and choose a
+   region that actually shows what you will narrate.
 2. Perform the demonstration with the pointer, keyboard, and window tools while
    capture runs. Every action and observation call is timestamped automatically
-   into the recording timeline; you do not need to do anything to enable it.
+   into the recording timeline; you do not need to enable anything.
 3. `recording_stop`, then poll `recording_status` until the phase is
    `completed` or `failed`; the final status carries the artifact path,
    `timeline_path`, and `timeline_event_count`.
@@ -75,53 +92,66 @@ orientation, not a contract.
    deadline, and live in a runtime directory that does not survive logout: move
    or upload finished artifacts promptly.
 5. Prefer `webm` for anything a browser will render; use `gif` only for contexts
-   that cannot run `<video>`. A GIF is always silent.
+   that cannot run `<video>`.
 
-## Narrated recording workflow
+## Narrated screencast (default for demos)
 
 The server is deterministic and never writes narration prose; you do, and you
 submit it as data. The server owns timestamping, synthesis, alignment, and muxing.
 
-1. Record a `webm` as above (never `gif` — GIF cannot carry audio).
-2. After completion, call `recording_timeline`. Read the `events` array; each
-   event has an `id`, a recording-relative `t_ms`, the `tool` that ran, an `ok`
-   flag, and a compact `payload` (coordinates, buttons, counts, key names,
-   window identifiers — never typed text or clipboard contents).
-3. Write one narration segment per beat. Anchor each segment to either an
-   `event_id` from the timeline (preferred, because it is exact) or an absolute
-   `at_ms`. The anchor positions the first spoken word of the segment.
-4. Submit the segments with `recording_voiceover`:
+1. Preflight with `screen_info`. Check the `binaries` map for `edge-tts`,
+   `piper`, and `tesseract`, and pick the engine using the privacy rules below.
+2. Capture `webm` as in the Recording workflow. Perform the demo as **distinct
+   beats**, one visible action per thing you will narrate.
+3. `recording_stop`; poll `recording_status` until `completed`. Note the `path`,
+   `capture_seconds`, and `timeline_path`.
+4. Call `recording_timeline`. Anchor each upcoming segment to either an
+   `event_id` (preferred) or an absolute `at_ms`. Each event marks when an
+   action began and carries a compact payload (coordinates, counts, key names,
+   window identifiers) — never typed text or clipboard contents.
+5. Author one segment per beat: one idea, roughly 6–12 words, plain present
+   tense. Anchor it to the event that **shows** the thing you are saying. Keep
+   the total speech at or under `capture_seconds`; if it must be tight, set
+   `fit: "compress"`.
+6. Submit with `recording_voiceover`; poll `recording_status` until
+   `completed` again.
+7. Verify: `audio_included` is `true`, each `narration.segments[].start_ms` is
+   near its anchor, and the duration is sane. Report the artifact path, duration,
+   and that audio is included.
 
-   ```json
-   {
-     "engine": "edge",
-     "voice": "en-US-AriaNeural",
-     "fit": "natural",
-     "offset_ms": 0,
-     "segments": [
-       {"anchor": {"event_id": 1}, "text": "First I open the settings panel."},
-       {"anchor": {"event_id": 4}, "text": "Now I run the solver."},
-       {"anchor": {"at_ms": 12000}, "text": "The score improves as it searches."}
-     ]
-   }
-   ```
+Canonical call:
 
-5. `recording_voiceover` starts an asynchronous `narrating` phase. Poll
-   `recording_status` until `completed` again; then `audio_included` is `true`
-   and `narration` carries per-segment timing (`start_ms`, `duration_ms`,
-   `shift_ms`, `compressed`, `word_count`). If narration failed, the recording
-   returns to `completed` with `narration.error`; the silent artifact is intact.
-6. Keep one idea per segment, keep segments short, and anchor to real events.
-   If two segments would collide, `fit: "natural"` pushes the later one forward
-   without changing its speed; `fit: "compress"` time-compresses instead.
+```json
+{
+  "engine": "edge",
+  "voice": "en-US-AriaNeural",
+  "fit": "natural",
+  "offset_ms": 0,
+  "segments": [
+    {"anchor": {"event_id": 1}, "text": "First I open the settings panel."},
+    {"anchor": {"event_id": 4}, "text": "Then I run the solver."},
+    {"anchor": {"at_ms": 12000}, "text": "The score improves as it searches."}
+  ]
+}
+```
+
+### Narration quality bar
+
+- One idea per segment; short; present tense ("I open Settings", not "the user
+  could theoretically..."). Never narrate something the recording does not show.
+- Prefer `event_id` over `at_ms`; prefer fewer, well-placed segments over many.
+- Leave breathing room between segments. If speech overruns the video, shorten
+  the text or use `fit: "compress"`; do not re-record just to make it fit.
+- The artifact is only as long as the longer of video and aligned audio, so keep
+  total speech within `capture_seconds` for a clean, video-length result.
 
 ### Engine choice and privacy
 
 - `engine: "edge"` (also the `auto` preference): `edge-tts`, Microsoft Edge Read
-  Aloud. Keyless and gives exact per-word WordBoundary timings, but unofficial,
-  network-dependent, and it **sends your narration text to Microsoft**. Treat it
-  as a third-party transmission and get user confirmation when the prose is
-  sensitive.
+  Aloud. Keyless and gives exact word timings, but unofficial, network-dependent,
+  and it **sends your narration text to Microsoft**. Use it for non-sensitive
+  prose. Confirm with the user before narrating text that is private, secret, or
+  personal.
 - `engine: "piper"`: fully offline, nothing leaves the host. Needs a model file:
   pass `voice` (a model path) or set `COMPUTER_USE_SWAY_PIPER_MODEL`. No word
   timings; leading silence is measured with `ffmpeg`.
@@ -129,12 +159,21 @@ submit it as data. The server owns timestamping, synthesis, alignment, and muxin
   neither is installed. The server never silently substitutes an engine, so a
   missing engine is always visible.
 
+### Failure and rework
+
+- Narration failure returns the job to `completed` with `narration.error`; the
+  silent recording is intact. Fix the request and call `recording_voiceover`
+  again — it copies the video and drops the previous audio, so re-narration is
+  safe.
+- `recording_voiceover` refuses `format=gif`; record `webm` instead.
+- For a recording with no timeline (older artifacts), `recording_scenes` gives
+  approximate scene-cut anchors only; do not present them as exact.
+
 ## Fallback anchors
 
-If a recording has no timeline (for example, it predates this feature), you may
-call `recording_scenes` for approximate scene-cut timestamps and, with
-`ocr: true`, keyframe text. These are secondary evidence only; do not present
-them as exact synchronization.
+If a recording has no timeline because it predates this feature, you may call
+`recording_scenes` for approximate scene-cut timestamps and, with `ocr: true`,
+keyframe text. These are secondary evidence only; never the sync mechanism.
 
 ## Environment
 
