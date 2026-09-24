@@ -244,6 +244,13 @@ def choose_video_encoder() -> str:
     )
 
 
+def av1_encoder_args(encoder: str) -> list[str]:
+    """Encoder tuning shared by recording finalization and narration burn-in."""
+    if encoder == "libsvtav1":
+        return ["-crf", "28", "-preset", "8"]
+    return ["-crf", "30", "-cpu-used", "6", "-row-mt", "1", "-tiles", "2x2"]
+
+
 def recording_webm_argv(job: RecordingJob) -> list[str]:
     filters = [
         f"fps={RECORDING_VIDEO_FPS}",
@@ -269,10 +276,7 @@ def recording_webm_argv(job: RecordingJob) -> list[str]:
         "-c:v",
         job.encoder,
     ]
-    if job.encoder == "libsvtav1":
-        argv.extend(["-crf", "28", "-preset", "8"])
-    else:
-        argv.extend(["-crf", "30", "-cpu-used", "6", "-row-mt", "1", "-tiles", "2x2"])
+    argv.extend(av1_encoder_args(job.encoder))
     argv.extend(
         [
             "-force_key_frames",

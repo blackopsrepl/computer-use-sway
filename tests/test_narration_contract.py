@@ -127,6 +127,13 @@ class NarrationValidationTests(unittest.TestCase):
             with self.assertRaises(server.ToolError, msg=str(extra)):
                 self.parse({**base, **extra})
 
+    def test_subtitles_default_on_and_overridable(self) -> None:
+        base = {"segments": [{"anchor": {"at_ms": 0}, "text": "t"}]}
+        self.assertTrue(self.parse(base).subtitles)
+        self.assertFalse(self.parse({**base, "subtitles": False}).subtitles)
+        with self.assertRaises(server.ToolError):
+            self.parse({**base, "subtitles": "no"})
+
 
 class AnchorResolutionTests(unittest.TestCase):
     def setUp(self) -> None:

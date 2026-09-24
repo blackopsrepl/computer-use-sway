@@ -300,6 +300,14 @@ def tool_specs() -> list[dict[str, Any]]:
                         "maximum": tts.NARRATION_MAX_TAIL_MS,
                         "default": tts.NARRATION_DEFAULT_TAIL_MS,
                     },
+                    "subtitles": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": (
+                            "Burn styled captions from the narration into the video "
+                            "(re-encodes the video). Set false to copy the video without captions."
+                        ),
+                    },
                 },
                 "required": ["segments"],
                 "additionalProperties": False,

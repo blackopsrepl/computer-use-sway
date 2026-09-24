@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import core, recording, tts
+from . import core, recording, subtitles, tts
 
 
 @dataclass
@@ -26,6 +26,7 @@ class NarrationRequest:
     offset_ms: float
     fit: str
     tail_ms: float
+    subtitles: bool = True
 
 
 @dataclass
@@ -104,7 +105,7 @@ def parse_narration_segment(
 def parse_narration_arguments(arguments: dict[str, Any], job: RecordingJob) -> NarrationRequest:
     if not isinstance(arguments, dict):
         raise core.ToolError("narration arguments must be an object")
-    unknown = set(arguments) - {"segments", "engine", "voice", "offset_ms", "fit", "tail_ms"}
+    unknown = set(arguments) - {"segments", "engine", "voice", "offset_ms", "fit", "tail_ms", "subtitles"}
     if unknown:
         raise core.ToolError(f"unknown narration key(s): {', '.join(sorted(unknown))}")
     raw_segments = arguments.get("segments")
@@ -131,6 +132,9 @@ def parse_narration_arguments(arguments: dict[str, Any], job: RecordingJob) -> N
         minimum=0.0,
         maximum=tts.NARRATION_MAX_TAIL_MS,
     )
+    subtitles_enabled = arguments.get("subtitles", True)
+    if not isinstance(subtitles_enabled, bool):
+        raise core.ToolError("subtitles must be a boolean")
     capture_ms = recording_capture_ms(job)
     event_ids = {int(event["id"]) for event in job.events}
     segments = [
@@ -146,6 +150,7 @@ def parse_narration_arguments(arguments: dict[str, Any], job: RecordingJob) -> N
         offset_ms=offset_ms,
         fit=fit,
         tail_ms=tail_ms,
+        subtitles=subtitles_enabled,
     )
 
 
@@ -324,16 +329,30 @@ def perform_narration(
             out_path = workdir / f"segment-{segment.index:03d}{suffix}"
             clips[segment.index] = engine.synthesize(segment.text, request.voice, out_path)
         schedule = schedule_narration(anchored, clips, capture_ms, request)
+        segment_text = {segment.index: segment.text for segment, _ in anchored}
         track_path = workdir / "narration.wav"
         core.run_command(
             narration_track_argv(anchored, clips, schedule, track_path),
             timeout=tts.NARRATION_BUILD_TIMEOUT_SECONDS,
         )
         temp_path = job.directory / f"{job.id}.narrated.webm.part"
-        core.run_command(
-            narration_mux_argv(job.artifact, track_path, temp_path),
-            timeout=tts.NARRATION_BUILD_TIMEOUT_SECONDS,
-        )
+        if request.subtitles:
+            entries = [
+                {
+                    "start_ms": item.start_ms,
+                    "end_ms": item.start_ms + item.clip_ms,
+                    "text": segment_text[item.index],
+                }
+                for item in schedule.segments
+            ]
+            document = subtitles.build_ass_document(entries, job.width, job.height)
+            subtitle_path = subtitles.write_subtitle_file(workdir, document)
+            mux_argv = subtitles.burn_mux_argv(
+                job.artifact, track_path, subtitle_path, temp_path, job.encoder
+            )
+        else:
+            mux_argv = narration_mux_argv(job.artifact, track_path, temp_path)
+        core.run_command(mux_argv, timeout=tts.NARRATION_BUILD_TIMEOUT_SECONDS)
         try:
             recording.validate_recording_artifact(job, expect_audio=True, path=temp_path)
             os.chmod(temp_path, recording.RECORDING_FILE_MODE)
@@ -346,6 +365,7 @@ def perform_narration(
             "voice": request.voice,
             "offset_ms": request.offset_ms,
             "fit": request.fit,
+            "subtitles": request.subtitles,
             "segment_count": len(schedule.segments),
             "total_duration_ms": round(schedule.total_ms, 3),
             "segments": [
