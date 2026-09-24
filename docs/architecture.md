@@ -80,6 +80,38 @@ optional, capability-gated extension.
   `showinfo` timestamps and, optionally, OCRs each cut frame with `tesseract`.
   These are approximate fallback anchors, never the sync mechanism.
 
+## Module Layout
+
+The server is one Python package split into focused modules, each under the
+500-line ceiling enforced by `make check`:
+
+- `core.py`: `ToolError`, `run_command`, binary/session helpers, and strict
+  parsing (`strict_int`, `strict_number`, `json_text`). Leaf module.
+- `desktop.py`: Sway outputs, seats, tree, window matching, coordinates, and
+  cursor commands. Depends on `core`.
+- `media.py`: `ffprobe`-backed probing (`probe_media`, `probe_video_stream`,
+  `parse_frame_rate`). Depends on `core`.
+- `recording.py`: `RecordingJob`, path allocation, capture/finalize argv,
+  artifact validation, and finalization. Depends on `core`, `desktop`, `media`,
+  `timeline`.
+- `timeline.py`: recording-relative event document and sidecar writer.
+- `tts.py`: `TtsEngine` interface, `edge-tts`/`piper` engines, VTT and silence
+  parsing, and the narration constants. Depends on `core`, `media`.
+- `narration.py`: narration contract, anchor resolution, deterministic
+  scheduling, track build, mux argv, and `perform_narration`. Depends on `core`,
+  `recording`, `tts`.
+- `scenes.py`: approximate scene-cut detection and OCR fallback anchors.
+- `manager.py`: `RecordingManager` and the module-level `RECORDINGS` singleton;
+  the only owner of recording state. Depends on every other runtime module.
+- `tools.py`: MCP tool implementations and the `TOOLS` dispatch table.
+- `specs.py`: JSON schemas for `tools/list`.
+- `server.py`: the MCP protocol loop, `initialize` instructions, diagnostics,
+  and the CLI facade; re-exports the lower layers for callers and tests.
+
+Dependency direction is one-way (`core` → `desktop`/`media` → `recording`/`tts`
+→ `narration` → `manager` → `tools`/`specs` → `server`), so a missing optional
+binary is always a runtime `ToolError`, never an import failure.
+
 ## Tool Error Model
 
 Expected desktop and validation failures are reported as MCP tool results with `isError: true`. Unexpected Python exceptions are logged to stderr and returned as a generic internal tool error.

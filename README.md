@@ -271,13 +271,23 @@ Recording captures whatever is visible on the recorded output, including the poi
 
 Narration is the only feature that can send data off the host. The default text-to-speech engine, `edge-tts`, transmits the narration prose you submit to Microsoft's Edge Read Aloud endpoint; it is keyless but unofficial, network-dependent, and ToS-gray. If narration text must not leave the host, use `engine: "piper"`, which runs fully offline (and install a voice model), or do not call `recording_voiceover` at all. The server never generates prose and never falls back to a network engine silently.
 
+## Documentation
+
+- `WIREFRAME.md`: the shipped MCP tool surface and runtime contract.
+- `docs/architecture.md`: module layout, boundaries, and lifecycle.
+- `AGENTS.md`: repository rules, including the 500-line file limit.
+- `skill/solverforge-computer-use/SKILL.md`: the agent operating procedure.
+
 ## Development
 
 ```bash
 make check
 ```
 
-`make check` runs import/protocol tests and Python bytecode compilation. It does not require an active Sway session.
+`make check` runs the unit tests, Python bytecode compilation, and the file
+length check. It does not require an active Sway session. The server is split
+into focused modules under `src/computer_use_sway/`; any file that reaches 500
+lines must be split (`scripts/check_file_length.py`).
 
 Build local distribution artifacts:
 
