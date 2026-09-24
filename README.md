@@ -18,6 +18,8 @@ It exposes screen, window, pointer, keyboard, clipboard, and recording tools thr
 - Type text and send key chords through `wtype`.
 - Read and write text clipboard contents through `wl-clipboard`.
 - Record a screen region as a silent web-ready video or constrained GIF.
+- Capture a monotonic event timeline during recording and optionally attach a
+  scripted, timeline-aligned voiceover track.
 
 ## Requirements
 
@@ -30,6 +32,15 @@ Runtime commands:
 - `wl-paste`
 - `wf-recorder` (recording)
 - `ffmpeg` and `ffprobe` (recording)
+
+Optional, only for narration and fallback anchors (runtime-detected; missing
+commands produce a clear tool error and never a hard import failure):
+
+- `edge-tts` — text-to-speech (keyless, but unofficial and network-dependent;
+  the default engine. Narration text is sent to Microsoft.)
+- `piper` — offline text-to-speech that never leaves the host; needs a voice
+  model file (pass `voice` or set `COMPUTER_USE_SWAY_PIPER_MODEL`)
+- `tesseract` — OCR for `recording_scenes` keyframe text (optional)
 
 On openSUSE:
 
@@ -138,7 +149,8 @@ Formats:
   maximum width, infinite loop. For ordinary web pages, prefer `webm`; a GIF of
   the same content is far larger.
 
-Both formats are silent by design; there is no audio parameter.
+Both formats are silent by default; there is no audio parameter on
+`recording_start`. Narration is a separate, opt-in step.
 
 Behavior and limits:
 
@@ -155,6 +167,72 @@ Behavior and limits:
   `webm`, 15 for `gif`) or when the intermediate exceeds 1 GiB.
 - If finalization fails, the intermediate `.mkv` and a `.log` with the tool's
   stderr are kept and reported so the material is recoverable.
+
+### Timeline
+
+While capture runs, every action and observation tool call (`screen_info`,
+`screenshot`, `window_tree`, `focus_window`, `move_pointer`, `click`, `drag`,
+`scroll`, `type_text`, `key`, `clipboard_set`, `clipboard_get`) is appended to a
+monotonic, recording-relative timeline with a curated payload. The payload
+records coordinates, buttons, counts, key names, window identifiers, and byte or
+character counts — never typed text or clipboard contents, and never screenshot
+image data, so the timeline is safe to store and share.
+
+- `recording_timeline` returns the events (`id`, `t_ms`, `tool`, `ok`,
+  `payload`) for the current or last recording.
+- On completion a `0600` sidecar JSON copy is written next to the artifact as
+  `<id>.timeline.json` and reported as `timeline_path`; its event ids are the
+  anchors narration uses.
+- `t_ms` is measured from the start of the recording. The recorder's first frame
+  lands a few milliseconds later (process launch and encoder latency); that skew
+  is constant for a take and can be compensated with the `offset_ms` narration
+  option.
+
+### Scripted voiceover
+
+`recording_voiceover` is the one place audio enters the pipeline. The calling
+agent writes the prose; the server validates it, synthesizes speech, aligns it
+to the timeline, and muxes it. Use `recording_timeline` first to pick anchors.
+
+```json
+{"name": "recording_voiceover", "arguments": {
+  "engine": "edge",
+  "voice": "en-US-AriaNeural",
+  "fit": "natural",
+  "segments": [
+    {"anchor": {"event_id": 1}, "text": "First I open the settings panel."},
+    {"anchor": {"at_ms": 4200}, "text": "The score improves as the solver runs."}
+  ]
+}}
+```
+
+- Each segment has exactly one anchor: `event_id` (an id from the timeline) or
+  `at_ms` (absolute milliseconds into the recording). Anchors position the first
+  spoken word of the segment.
+- `engine` is `auto` (default), `edge`, or `piper`. `auto` prefers `edge-tts`,
+  then `piper`; if neither is installed it fails with a clear error instead of
+  substituting something else.
+- `offset_ms` (±5000) shifts every anchor to compensate for recorder skew.
+- `fit` is `natural` (default: later segments are pushed forward so they never
+  overlap, preserving natural speech) or `compress` (a segment that would
+  overrun the next anchor is time-compressed with `atempo`).
+- `tail_ms` (default 300) extends the audio track past the last word.
+- Narration starts an asynchronous `narrating` phase; poll `recording_status`
+  until `completed`. On success the result gains `audio_included: true` and a
+  `narration` block with per-segment `start_ms`, `duration_ms`, `shift_ms`,
+  `compressed`, and `word_count`. On failure the recording reverts to
+  `completed` with `narration.error`.
+- The AV1 video stream is copied, never re-encoded (`-c:v copy`); the added
+  track is Opus. The artifact path is unchanged.
+- **GIF cannot carry audio.** `recording_voiceover` refuses `format=gif` and
+  tells you to record `webm`.
+
+### Fallback anchors
+
+`recording_scenes` runs cheap, keyless enrichment on a completed recording:
+`ffmpeg` scene-cut timestamps, with optional keyframe OCR via `tesseract`
+(`ocr: true`). These are approximate and deliberately secondary — use them only
+when no timeline exists, never as the sync source.
 
 ## Agent Guidance
 
@@ -190,6 +268,8 @@ The server reconstructs `XDG_RUNTIME_DIR`, `SWAYSOCK`, and `WAYLAND_DISPLAY` fro
 This server gives an MCP client practical control over your active desktop session. Only register it with local clients you trust. It intentionally has no network listener; the transport is stdio.
 
 Recording captures whatever is visible on the recorded output, including the pointer cursor, until it is stopped. Recordings are written only to the server's private runtime directory, and their paths are returned to the MCP client; treat any active recording as visible desktop observation.
+
+Narration is the only feature that can send data off the host. The default text-to-speech engine, `edge-tts`, transmits the narration prose you submit to Microsoft's Edge Read Aloud endpoint; it is keyless but unofficial, network-dependent, and ToS-gray. If narration text must not leave the host, use `engine: "piper"`, which runs fully offline (and install a voice model), or do not call `recording_voiceover` at all. The server never generates prose and never falls back to a network engine silently.
 
 ## Development
 
