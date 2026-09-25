@@ -240,6 +240,11 @@ to the timeline, and muxes it. Use `recording_timeline` first to pick anchors.
 - Each segment has exactly one anchor: `event_id` (an id from the timeline) or
   `at_ms` (absolute milliseconds into the recording). Anchors position the first
   spoken word of the segment.
+- The published artifact is the single source of truth for narration: anchors are
+  clamped to its measured duration and the mux reads that same file, so a
+  manually trimmed or replaced artifact is honored. If its duration cannot be
+  read, the call fails with a clear error rather than falling back to the
+  capture wall-clock or the discarded intermediate.
 - `engine` is `auto` (default), `edge`, or `piper`. `auto` prefers `edge-tts`,
   then `piper`; if neither is installed it fails with a clear error instead of
   substituting something else.

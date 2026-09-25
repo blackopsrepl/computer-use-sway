@@ -153,8 +153,14 @@ accepts:
 ```
 
 - Each segment has exactly one anchor: `event_id` (a timeline id) or `at_ms`
-  (absolute milliseconds, within the capture window plus slack). The anchor
-  positions the first spoken word.
+  (absolute milliseconds, within the published artifact's duration plus slack).
+  The anchor positions the first spoken word.
+- The artifact on disk at `job.artifact` is the single source of truth for
+  post-processing: anchor validation and scheduling both use its measured
+  `ffprobe` duration, and the mux reads that same file. If the artifact's
+  duration disagrees with `capture_seconds` (for example after a manual trim),
+  the artifact wins; an unreadable artifact is a clear `ToolError`, never a
+  fallback to the capture wall-clock or the discarded intermediate.
 - Text is caller-authored, non-empty, ≤2000 chars per segment and ≤10000 total.
 - `engine`: `auto` (prefers `edge`, then `piper`), `edge`, or `piper`; a missing
   engine is a clear `ToolError`, never a silent substitution. `edge-tts`

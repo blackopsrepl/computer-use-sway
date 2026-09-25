@@ -71,7 +71,9 @@ class NarrationValidationTests(unittest.TestCase):
         )
 
     def parse(self, arguments: dict) -> server.NarrationRequest:
-        return server.parse_narration_arguments(arguments, self.job)
+        return server.parse_narration_arguments(
+            arguments, self.job, server.recording_capture_ms(self.job)
+        )
 
     def test_accepts_event_and_absolute_anchors(self) -> None:
         request = self.parse(
@@ -147,6 +149,7 @@ class AnchorResolutionTests(unittest.TestCase):
         request = server.parse_narration_arguments(
             {"segments": [{"anchor": {"event_id": 2}, "text": "t"}], "offset_ms": 250},
             self.job,
+            server.recording_capture_ms(self.job),
         )
         anchored = server.resolve_segment_anchors(request, self.job)
         self.assertEqual(anchored[0][1], 4250.0)
@@ -160,6 +163,7 @@ class AnchorResolutionTests(unittest.TestCase):
                 ]
             },
             self.job,
+            server.recording_capture_ms(self.job),
         )
         anchored = server.resolve_segment_anchors(request, self.job)
         self.assertEqual([item[0].text for item in anchored], ["earlier", "later"])

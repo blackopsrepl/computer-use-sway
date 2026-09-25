@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import core, recording, subtitles, tts
+from . import core, media, recording, subtitles, tts
 
 
 @dataclass
@@ -27,6 +27,7 @@ class NarrationRequest:
     fit: str
     tail_ms: float
     subtitles: bool = True
+    duration_ms: float | None = None
 
 
 @dataclass
@@ -52,6 +53,25 @@ class NarrationSchedule:
 def recording_capture_ms(job: recording.RecordingJob) -> float:
     end = job.ended_monotonic if job.ended_monotonic is not None else time.monotonic()
     return round(max(end - job.started_monotonic, 0.0) * 1000.0, 3)
+
+
+def recording_duration_ms(job: recording.RecordingJob) -> float:
+    """Measured duration of the published artifact, in milliseconds.
+
+    Post-processing is owned by the artifact on disk: anchor validation and
+    scheduling must agree with the bytes the caller can actually see at
+    ``job.artifact``. Capture wall-clock time and the discarded intermediate
+    are never consulted, so a trimmed or replaced artifact is honored and an
+    unreadable one fails clearly instead of silently using a stale duration.
+    """
+    probe = media.probe_media(job.artifact)
+    try:
+        duration = float((probe.get("format") or {}).get("duration") or 0.0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    if duration <= 0.0:
+        raise core.ToolError(f"artifact has no readable duration: {job.artifact.name}")
+    return round(duration * 1000.0, 3)
 
 
 def parse_narration_segment(
@@ -102,7 +122,11 @@ def parse_narration_segment(
     return NarrationSegment(index, None, at_ms, text)
 
 
-def parse_narration_arguments(arguments: dict[str, Any], job: recording.RecordingJob) -> NarrationRequest:
+def parse_narration_arguments(
+    arguments: dict[str, Any],
+    job: recording.RecordingJob,
+    duration_ms: float | None = None,
+) -> NarrationRequest:
     if not isinstance(arguments, dict):
         raise core.ToolError("narration arguments must be an object")
     unknown = set(arguments) - {"segments", "engine", "voice", "offset_ms", "fit", "tail_ms", "subtitles"}
@@ -135,10 +159,11 @@ def parse_narration_arguments(arguments: dict[str, Any], job: recording.Recordin
     subtitles_enabled = arguments.get("subtitles", True)
     if not isinstance(subtitles_enabled, bool):
         raise core.ToolError("subtitles must be a boolean")
-    capture_ms = recording_capture_ms(job)
+    if duration_ms is None:
+        duration_ms = recording_duration_ms(job)
     event_ids = {int(event["id"]) for event in job.events}
     segments = [
-        parse_narration_segment(raw, index + 1, event_ids, capture_ms)
+        parse_narration_segment(raw, index + 1, event_ids, duration_ms)
         for index, raw in enumerate(raw_segments)
     ]
     if sum(len(segment.text) for segment in segments) > core.TEXT_LIMIT:
@@ -151,6 +176,7 @@ def parse_narration_arguments(arguments: dict[str, Any], job: recording.Recordin
         fit=fit,
         tail_ms=tail_ms,
         subtitles=subtitles_enabled,
+        duration_ms=duration_ms,
     )
 
 
@@ -283,7 +309,9 @@ def narration_track_argv(
 def perform_narration(
     job: recording.RecordingJob, request: NarrationRequest, engine: tts.TtsEngine
 ) -> dict[str, Any]:
-    capture_ms = recording_capture_ms(job)
+    duration_ms = request.duration_ms
+    if duration_ms is None:
+        duration_ms = recording_duration_ms(job)
     anchored = resolve_segment_anchors(request, job)
     workdir = job.directory / f"{job.id}.narration"
     workdir.mkdir(mode=recording.RECORDING_DIR_MODE, exist_ok=True)
@@ -294,7 +322,7 @@ def perform_narration(
             suffix = ".mp3" if engine.name == "edge" else ".wav"
             out_path = workdir / f"segment-{segment.index:03d}{suffix}"
             clips[segment.index] = engine.synthesize(segment.text, request.voice, out_path)
-        schedule = schedule_narration(anchored, clips, capture_ms, request)
+        schedule = schedule_narration(anchored, clips, duration_ms, request)
         segment_text = {segment.index: segment.text for segment, _ in anchored}
         track_path = workdir / "narration.wav"
         core.run_command(

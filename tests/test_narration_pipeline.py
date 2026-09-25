@@ -267,6 +267,82 @@ class ValidateNarratedArtifactTests(unittest.TestCase):
                 server.validate_recording_artifact(self.job)
 
 
+class NarrationArtifactSourceTests(unittest.TestCase):
+    """The published artifact is the single source of truth for scheduling."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def trimmed_job(self) -> recording.RecordingJob:
+        return completed_job(
+            self.tmp.name, capture_seconds=102.941, events=[event(1, 500.0)]
+        )
+
+    def probe_artifact(self, duration_seconds: str):
+        return patch.object(
+            media,
+            "probe_media",
+            return_value={"format": {"duration": duration_seconds}, "streams": []},
+        )
+
+    def test_anchor_validation_uses_artifact_duration_not_capture_window(self) -> None:
+        job = self.trimmed_job()
+        with self.probe_artifact("57.0"):
+            self.assertEqual(server.recording_duration_ms(job), 57000.0)
+            request = server.parse_narration_arguments(
+                {"segments": [{"anchor": {"at_ms": 50000}, "text": "hi"}]}, job
+            )
+            self.assertEqual(request.duration_ms, 57000.0)
+            with self.assertRaises(server.ToolError) as ctx:
+                server.parse_narration_arguments(
+                    {"segments": [{"anchor": {"at_ms": 60000}, "text": "hi"}]}, job
+                )
+        self.assertIn("beyond the recording duration", str(ctx.exception))
+
+    def test_pipeline_schedules_and_muxes_from_the_artifact(self) -> None:
+        job = self.trimmed_job()
+        with self.probe_artifact("57.0"):
+            request = server.parse_narration_arguments(
+                {"segments": [{"anchor": {"at_ms": 50000}, "text": "hi"}], "subtitles": False},
+                job,
+            )
+
+        calls: list[list[str]] = []
+
+        def fake_run(argv, **kwargs):
+            calls.append(argv)
+            server.Path(argv[-1]).write_bytes(b"x")
+            return core.CommandResult(stdout=b"", stderr=b"", returncode=0)
+
+        class FakeEngine:
+            name = "edge"
+
+            def synthesize(self, text, voice, out_path):
+                out_path.write_bytes(b"audio")
+                return clip(str(out_path), 1200.0)
+
+        fresh = {
+            "codec": "av1",
+            "container": "webm",
+            "mime_type": "video/webm",
+            "width": 1920,
+            "height": 1080,
+            "duration_seconds": 57.0,
+            "frame_rate": 30.0,
+        }
+        with patch.object(core, "run_command", side_effect=fake_run):
+            with patch.object(recording, "validate_recording_artifact", return_value=fresh):
+                meta = narration.perform_narration(job, request, FakeEngine())
+
+        track_argv = next(argv for argv in calls if argv[-1].endswith("narration.wav"))
+        mux_argv = next(argv for argv in calls if "-c:v" in argv)
+        self.assertEqual(track_argv[track_argv.index("-t") + 1], "57.000")
+        self.assertIn(str(job.artifact), mux_argv)
+        self.assertNotIn(str(job.intermediate), mux_argv)
+        self.assertEqual(meta["total_duration_ms"], 57000.0)
+
+
 class VoiceoverLifecycleTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
@@ -318,11 +394,12 @@ class VoiceoverLifecycleTests(unittest.TestCase):
         with patch.object(tts, "resolve_tts_engine", return_value=server.EdgeTtsEngine()):
             with patch.object(narration, "perform_narration", side_effect=fake_perform):
                 with patch.object(recording, "validate_recording_artifact", return_value=fresh):
-                    summary = self.manager.voiceover(
-                        {"segments": [{"anchor": {"event_id": 1}, "text": "hi"}]}
-                    )
-                    self.assertEqual(summary["phase"], "narrating")
-                    job.thread.join(timeout=5)
+                    with patch.object(narration, "recording_duration_ms", return_value=9000.0):
+                        summary = self.manager.voiceover(
+                            {"segments": [{"anchor": {"event_id": 1}, "text": "hi"}]}
+                        )
+                        self.assertEqual(summary["phase"], "narrating")
+                        job.thread.join(timeout=5)
         final = self.manager.status()
         self.assertEqual(final["phase"], "completed")
         self.assertTrue(final["audio_included"])
@@ -336,10 +413,11 @@ class VoiceoverLifecycleTests(unittest.TestCase):
         with patch.object(tts, "resolve_tts_engine", return_value=server.EdgeTtsEngine()):
             with patch.object(narration, "perform_narration", side_effect=server.ToolError("tts exploded")
             ):
-                self.manager.voiceover(
-                    {"segments": [{"anchor": {"event_id": 1}, "text": "hi"}]}
-                )
-                job.thread.join(timeout=5)
+                with patch.object(narration, "recording_duration_ms", return_value=9000.0):
+                    self.manager.voiceover(
+                        {"segments": [{"anchor": {"event_id": 1}, "text": "hi"}]}
+                    )
+                    job.thread.join(timeout=5)
         final = self.manager.status()
         self.assertEqual(final["phase"], "completed")
         self.assertIn("tts exploded", final["narration"]["error"])

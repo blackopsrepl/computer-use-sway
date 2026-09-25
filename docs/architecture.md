@@ -68,7 +68,12 @@ optional, capability-gated extension.
   `adelay`/`amix` in a fixed `filter_complex`, resampled to 48 kHz stereo and
   written as PCM WAV. All times are integer milliseconds; there is no
   randomness.
-- **Muxing.** The output inherits the recording's container. With captions
+- **Muxing.** The published artifact at `job.artifact` is the single source of
+  truth: anchors are validated and the schedule is clamped against its measured
+  `ffprobe` duration, and `ffmpeg` reads that same file. A trimmed or replaced
+  artifact is therefore honored; an unreadable one raises a clear `ToolError`
+  instead of falling back to the capture wall-clock or the discarded
+  intermediate. The output inherits the recording's container. With captions
   disabled, `ffmpeg` copies the video and adds one audio track (`-c:v copy`, AAC
   for MP4 or Opus for WebM); `os.replace` swaps it into place.
   `validate_recording_artifact(expect_audio=True)` re-probes the result to

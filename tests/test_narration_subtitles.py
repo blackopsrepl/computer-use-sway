@@ -107,7 +107,9 @@ class PerformNarrationSubtitlesTests(unittest.TestCase):
         self.job = completed_job(self.tmp.name, events=[event(1, 500.0)])
 
     def run_narration(self, arguments: dict) -> tuple[dict, list[list[str]]]:
-        request = narration.parse_narration_arguments(arguments, self.job)
+        request = narration.parse_narration_arguments(
+            arguments, self.job, server.recording_capture_ms(self.job)
+        )
         captured: list[list[str]] = []
 
         def fake_run(argv, **kwargs):
