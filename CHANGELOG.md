@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.2.6](https://github.com/blackopsrepl/computer-use-sway/compare/v0.2.5...v0.2.6) (2026-09-25)
+
+
+### Features
+
+* **recording:** address a specific take by id 449c2c3
+* **screenshot:** add save_path for flat image budgets 065f731
+
+
+### Bug Fixes
+
+* **narration:** schedule and mux from the published artifact 7da5f65
+
 ## [0.2.5](https://github.com/blackopsrepl/computer-use-sway/compare/v0.2.4...v0.2.5) (2026-09-25)
 
 
