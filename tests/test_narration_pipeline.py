@@ -71,8 +71,11 @@ class NarrationArgvTests(unittest.TestCase):
         self.assertIn("atempo", " ".join(argv))
 
     def test_mux_argv_copies_video_and_adds_opus(self) -> None:
-        argv = server.narration_mux_argv(
-            server.Path("/tmp/a.webm"), server.Path("/tmp/n.wav"), server.Path("/tmp/out.webm")
+        from types import SimpleNamespace
+
+        job = SimpleNamespace(artifact=server.Path("/tmp/a.webm"), fmt="webm", encoder="libsvtav1")
+        argv = recording.narration_mux_argv(
+            job, server.Path("/tmp/n.wav"), server.Path("/tmp/out.webm")
         )
         self.assertEqual(argv[:4], ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel"])
         self.assertIn("0:v:0", argv)
@@ -80,9 +83,20 @@ class NarrationArgvTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("-c:v") + 1], "copy")
         self.assertEqual(argv[argv.index("-c:a") + 1], "libopus")
         self.assertIn("-map_metadata", argv)
-        self.assertEqual(argv[-3], "-f")
         self.assertEqual(argv[-2], "webm")
         self.assertEqual(argv[-1], "/tmp/out.webm")
+
+    def test_mux_argv_mp4_uses_h264_and_aac(self) -> None:
+        from types import SimpleNamespace
+
+        job = SimpleNamespace(artifact=server.Path("/tmp/a.mp4"), fmt="mp4", encoder="libx264")
+        argv = recording.narration_mux_argv(
+            job, server.Path("/tmp/n.wav"), server.Path("/tmp/out.mp4")
+        )
+        self.assertEqual(argv[argv.index("-c:v") + 1], "copy")
+        self.assertEqual(argv[argv.index("-c:a") + 1], "aac")
+        self.assertIn("+faststart", argv)
+        self.assertEqual(argv[-1], "/tmp/out.mp4")
 
 
 class TtsHelperTests(unittest.TestCase):

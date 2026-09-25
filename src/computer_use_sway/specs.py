@@ -182,7 +182,8 @@ def tool_specs() -> list[dict[str, Any]]:
             "name": "recording_start",
             "description": (
                 "Start recording an active Sway output (or a region within it) into a silent "
-                "artifact: AV1 WebM video, or a constrained GIF fallback. Returns immediately; "
+                "artifact: H.264 MP4 by default, or AV1 WebM, or a constrained GIF fallback. "
+                "Returns immediately; "
                 "call recording_stop to finish, then poll recording_status until the phase is "
                 "completed or failed. The pointer cursor is always included."
             ),
@@ -207,9 +208,10 @@ def tool_specs() -> list[dict[str, Any]]:
                     },
                     "format": {
                         "type": "string",
-                        "enum": ["webm", "gif"],
-                        "default": "webm",
+                        "enum": list(recording.RECORDING_FORMATS),
+                        "default": "mp4",
                         "description": (
+                            "mp4: silent H.264 MP4 at 30 fps (default, widest compatibility); "
                             "webm: silent AV1 WebM at 30 fps; gif: constrained fallback at 12 fps, "
                             "960 px maximum width."
                         ),

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from . import recording, tts
+from . import recording
 
 SUBTITLE_FONT = "DejaVu Sans"
 SUBTITLE_FILE_NAME = "captions.ass"
@@ -102,47 +102,6 @@ def escape_filter_path(path: Path) -> str:
     )
 
 
-def burn_mux_argv(
-    artifact: Path, track: Path, subtitle_path: Path, out_path: Path, encoder: str
-) -> list[str]:
-    """Re-encode the video with burned-in captions and add the narration track."""
-    filter_graph = f"[0:v]subtitles=filename='{escape_filter_path(subtitle_path)}'[v]"
-    argv = [
-        "ffmpeg",
-        "-nostdin",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-i",
-        str(artifact),
-        "-i",
-        str(track),
-        "-filter_complex",
-        filter_graph,
-        "-map",
-        "[v]",
-        "-map",
-        "1:a:0",
-        "-c:v",
-        encoder,
-    ]
-    argv.extend(recording.av1_encoder_args(encoder))
-    argv.extend(
-        [
-            "-c:a",
-            "libopus",
-            "-b:a",
-            tts.NARRATION_AUDIO_BITRATE,
-            "-ac",
-            "2",
-            "-ar",
-            str(tts.NARRATION_SAMPLE_RATE),
-            "-map_metadata",
-            "-1",
-            "-f",
-            "webm",
-            str(out_path),
-        ]
-    )
-    return argv
+def video_filter(subtitle_path: Path) -> str:
+    """Build the ``subtitles`` filtergraph that burns the captions into ``[v]``."""
+    return f"[0:v]subtitles=filename='{escape_filter_path(subtitle_path)}'[v]"

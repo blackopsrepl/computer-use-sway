@@ -27,18 +27,21 @@ class StrictIntTests(unittest.TestCase):
 
 
 class RecordingFormatTests(unittest.TestCase):
-    def test_default_format_is_webm(self) -> None:
-        self.assertEqual(server.parse_recording_format(None), "webm")
+    def test_default_format_is_mp4(self) -> None:
+        self.assertEqual(server.parse_recording_format(None), "mp4")
 
     def test_known_formats_are_accepted(self) -> None:
         self.assertEqual(server.parse_recording_format("gif"), "gif")
+        self.assertEqual(server.parse_recording_format("webm"), "webm")
+        self.assertEqual(server.parse_recording_format("mp4"), "mp4")
 
     def test_unknown_format_is_rejected(self) -> None:
-        for value in ("mkv", "mp4", 7, None if False else "WEBM"):
+        for value in ("mkv", "mov", 7, None if False else "WEBM"):
             with self.assertRaises(server.ToolError, msg=f"{value!r}"):
                 server.parse_recording_format(value)
 
     def test_default_durations_per_format(self) -> None:
+        self.assertEqual(server.parse_max_duration(None, "mp4"), 60.0)
         self.assertEqual(server.parse_max_duration(None, "webm"), 60.0)
         self.assertEqual(server.parse_max_duration(None, "gif"), 15.0)
 
@@ -281,6 +284,15 @@ class EncoderChoiceTests(unittest.TestCase):
             with self.assertRaises(server.ToolError):
                 server.choose_video_encoder()
 
+    def test_h264_encoder_is_required_for_mp4(self) -> None:
+        with patch.object(core, "run_command") as run:
+            run.return_value.text = " V....D libx264            libx264 H.264\n"
+            self.assertEqual(server.choose_h264_encoder(), "libx264")
+        with patch.object(core, "run_command") as run:
+            run.return_value.text = " V..... libsvtav1           SVT-AV1 encoder\n"
+            with self.assertRaises(server.ToolError):
+                server.choose_h264_encoder()
+
 
 class FinalizeArgvTests(unittest.TestCase):
     def make_job(self, fmt: str = "webm", **overrides):
@@ -321,6 +333,22 @@ class FinalizeArgvTests(unittest.TestCase):
         argv = server.recording_webm_argv(job)
         self.assertIn("-cpu-used", argv)
         self.assertIn("-row-mt", argv)
+
+    def test_mp4_argv_uses_h264_and_excludes_audio(self) -> None:
+        job = self.make_job(fmt="mp4")
+        argv = server.recording_mp4_argv(job)
+        joined = " ".join(argv)
+        self.assertEqual(argv[0], "ffmpeg")
+        self.assertIn("libx264", argv)
+        self.assertIn("-preset", argv)
+        self.assertIn("+faststart", argv)
+        self.assertIn("-an", argv)
+        self.assertIn("-map_metadata", argv)
+        self.assertIn("fps=30", joined)
+        self.assertIn("format=yuv420p", joined)
+        self.assertIn("mp4", argv)
+        self.assertEqual(argv[-1], str(job.artifact))
+        self.assertNotIn("-a", argv)
 
     def test_gif_argv_downscales_only_wide_captures(self) -> None:
         job = self.make_job(fmt="gif", max_duration_seconds=10)

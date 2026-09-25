@@ -54,29 +54,42 @@ class AssDocumentTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), recording.RECORDING_FILE_MODE)
 
 
-class BurnMuxArgvTests(unittest.TestCase):
-    def test_burn_argv_reencodes_with_subtitles(self) -> None:
-        argv = subtitles.burn_mux_argv(
-            Path("/tmp/a.webm"),
-            Path("/tmp/n.wav"),
-            Path("/tmp/captions.ass"),
-            Path("/tmp/out.webm"),
-            "libsvtav1",
+class MuxArgvTests(unittest.TestCase):
+    FILTER = "[0:v]subtitles=filename='x'[v]"
+
+    def test_webm_burn_reencodes_with_subtitles(self) -> None:
+        from types import SimpleNamespace
+
+        job = SimpleNamespace(artifact=Path("/tmp/a.webm"), fmt="webm", encoder="libsvtav1")
+        argv = recording.narration_mux_argv(
+            job, Path("/tmp/n.wav"), Path("/tmp/out.webm"), self.FILTER
         )
         joined = " ".join(argv)
         self.assertIn("subtitles=filename=", joined)
-        self.assertIn("captions.ass", joined)
         self.assertEqual(argv[argv.index("-c:v") + 1], "libsvtav1")
-        self.assertNotIn("copy", argv)
         self.assertEqual(argv[argv.index("-c:a") + 1], "libopus")
-        self.assertEqual(argv[-3], "-f")
+        self.assertEqual(argv[argv.index("-f") + 1], "webm")
         self.assertEqual(argv[-1], "/tmp/out.webm")
 
-    def test_copy_argv_stays_a_stream_copy(self) -> None:
-        argv = narration.narration_mux_argv(
-            Path("/tmp/a.webm"), Path("/tmp/n.wav"), Path("/tmp/out.webm")
+    def test_mp4_burn_uses_h264_and_aac(self) -> None:
+        from types import SimpleNamespace
+
+        job = SimpleNamespace(artifact=Path("/tmp/a.mp4"), fmt="mp4", encoder="libx264")
+        argv = recording.narration_mux_argv(
+            job, Path("/tmp/n.wav"), Path("/tmp/out.mp4"), self.FILTER
         )
+        self.assertEqual(argv[argv.index("-c:v") + 1], "libx264")
+        self.assertEqual(argv[argv.index("-c:a") + 1], "aac")
+        self.assertIn("+faststart", argv)
+        self.assertEqual(argv[-1], "/tmp/out.mp4")
+
+    def test_copy_argv_stays_a_stream_copy(self) -> None:
+        from types import SimpleNamespace
+
+        job = SimpleNamespace(artifact=Path("/tmp/a.webm"), fmt="webm", encoder="libsvtav1")
+        argv = recording.narration_mux_argv(job, Path("/tmp/n.wav"), Path("/tmp/out.webm"))
         self.assertEqual(argv[argv.index("-c:v") + 1], "copy")
+        self.assertNotIn("subtitles=filename=", " ".join(argv))
 
 
 class _FakeEngine:

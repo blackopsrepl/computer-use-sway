@@ -57,7 +57,8 @@ class ProtocolTests(unittest.TestCase):
             self.assertNotIn("audio", json.dumps(schema), name)
 
         start_schema = specs["recording_start"]["inputSchema"]
-        self.assertEqual(start_schema["properties"]["format"]["enum"], ["webm", "gif"])
+        self.assertEqual(start_schema["properties"]["format"]["enum"], ["mp4", "webm", "gif"])
+        self.assertEqual(start_schema["properties"]["format"]["default"], "mp4")
         region = start_schema["properties"]["region"]
         self.assertEqual(region["required"], ["x", "y", "width", "height"])
 

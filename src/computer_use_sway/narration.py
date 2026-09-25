@@ -280,40 +280,6 @@ def narration_track_argv(
     return argv
 
 
-def narration_mux_argv(artifact: Path, track: Path, out_path: Path) -> list[str]:
-    return [
-        "ffmpeg",
-        "-nostdin",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-i",
-        str(artifact),
-        "-i",
-        str(track),
-        "-map",
-        "0:v:0",
-        "-map",
-        "1:a:0",
-        "-c:v",
-        "copy",
-        "-c:a",
-        "libopus",
-        "-b:a",
-        tts.NARRATION_AUDIO_BITRATE,
-        "-ac",
-        "2",
-        "-ar",
-        str(tts.NARRATION_SAMPLE_RATE),
-        "-map_metadata",
-        "-1",
-        "-f",
-        "webm",
-        str(out_path),
-    ]
-
-
 def perform_narration(
     job: RecordingJob, request: NarrationRequest, engine: TtsEngine
 ) -> dict[str, Any]:
@@ -335,7 +301,8 @@ def perform_narration(
             narration_track_argv(anchored, clips, schedule, track_path),
             timeout=tts.NARRATION_BUILD_TIMEOUT_SECONDS,
         )
-        temp_path = job.directory / f"{job.id}.narrated.webm.part"
+        temp_path = job.directory / f"{job.id}.narrated.{job.fmt}.part"
+        subtitle_filter = None
         if request.subtitles:
             entries = [
                 {
@@ -347,12 +314,11 @@ def perform_narration(
             ]
             document = subtitles.build_ass_document(entries, job.width, job.height)
             subtitle_path = subtitles.write_subtitle_file(workdir, document)
-            mux_argv = subtitles.burn_mux_argv(
-                job.artifact, track_path, subtitle_path, temp_path, job.encoder
-            )
-        else:
-            mux_argv = narration_mux_argv(job.artifact, track_path, temp_path)
-        core.run_command(mux_argv, timeout=tts.NARRATION_BUILD_TIMEOUT_SECONDS)
+            subtitle_filter = subtitles.video_filter(subtitle_path)
+        core.run_command(
+            recording.narration_mux_argv(job, track_path, temp_path, subtitle_filter),
+            timeout=tts.NARRATION_BUILD_TIMEOUT_SECONDS,
+        )
         try:
             recording.validate_recording_artifact(job, expect_audio=True, path=temp_path)
             os.chmod(temp_path, recording.RECORDING_FILE_MODE)

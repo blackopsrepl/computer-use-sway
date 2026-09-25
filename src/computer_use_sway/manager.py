@@ -109,6 +109,8 @@ class RecordingManager:
             new_job = recording.new_recording_job(arguments)
             if new_job.fmt == "webm":
                 new_job.encoder = recording.choose_video_encoder()
+            elif new_job.fmt == "mp4":
+                new_job.encoder = recording.choose_h264_encoder()
             try:
                 new_job.process = subprocess.Popen(
                     recording.recording_capture_argv(new_job),
