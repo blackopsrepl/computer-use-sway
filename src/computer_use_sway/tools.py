@@ -14,16 +14,16 @@ def tool_recording_start(arguments: dict[str, Any]) -> list[dict[str, str]]:
     return core.json_text(manager.RECORDINGS.start(arguments))
 
 
-def tool_recording_status(_: dict[str, Any]) -> list[dict[str, str]]:
-    return core.json_text(manager.RECORDINGS.status())
+def tool_recording_status(arguments: dict[str, Any]) -> list[dict[str, str]]:
+    return core.json_text(manager.RECORDINGS.status(arguments))
 
 
 def tool_recording_stop(_: dict[str, Any]) -> list[dict[str, str]]:
     return core.json_text(manager.RECORDINGS.stop())
 
 
-def tool_recording_timeline(_: dict[str, Any]) -> list[dict[str, str]]:
-    return core.json_text(manager.RECORDINGS.timeline())
+def tool_recording_timeline(arguments: dict[str, Any]) -> list[dict[str, str]]:
+    return core.json_text(manager.RECORDINGS.timeline(arguments))
 
 
 def tool_recording_voiceover(arguments: dict[str, Any]) -> list[dict[str, str]]:

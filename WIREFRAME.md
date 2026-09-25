@@ -70,11 +70,16 @@ Recording tools:
 | Tool | Arguments | Returns |
 |---|---|---|
 | `recording_start` | `output`, `region`, `format` (`mp4`\|`webm`\|`gif`), `max_duration_seconds` | recording summary |
-| `recording_status` | none | current phase and metadata |
+| `recording_status` | optional `id` | current phase and metadata |
 | `recording_stop` | none | stopping/processing summary |
-| `recording_timeline` | none | timeline document |
-| `recording_voiceover` | `segments`, `engine`, `voice`, `offset_ms`, `fit`, `tail_ms`, `subtitles` | narrating summary |
-| `recording_scenes` | `threshold`, `max_scenes`, `ocr` | approximate scene anchors |
+| `recording_timeline` | optional `id` | timeline document |
+| `recording_voiceover` | optional `id`, `segments`, `engine`, `voice`, `offset_ms`, `fit`, `tail_ms`, `subtitles` | narrating summary |
+| `recording_scenes` | optional `id`, `threshold`, `max_scenes`, `ocr` | approximate scene anchors |
+
+`recording_status`, `recording_timeline`, `recording_voiceover`, and
+`recording_scenes` accept the `id` returned by `recording_start`; it defaults to
+the latest job, and an unknown id is a clear `ToolError`. This lets a multi-take
+workflow address an earlier take instead of silently using the newest one.
 
 Input maps to Sway seat cursor commands and `wtype`; clipboard uses `wl-copy` and
 `wl-paste`. Every schema sets `additionalProperties: false`.

@@ -24,7 +24,7 @@ This lets a fresh MCP host reach the current desktop session without shell-speci
 
 ## Recording Lifecycle
 
-State machine: `recording` → `stopping` → `processing` → `completed` | `failed`; `idle` when no job exists. A `completed` video may transition to `narrating` and back to `completed` when a voiceover is requested. Only one job exists at a time; a completed or failed job remains visible through `recording_status` until the next start.
+State machine: `recording` → `stopping` → `processing` → `completed` | `failed`; `idle` when no job exists. A `completed` video may transition to `narrating` and back to `completed` when a voiceover is requested. Only one recording may be active at a time, but `RecordingManager` retains every job it created so `recording_status`, `recording_timeline`, `recording_voiceover`, and `recording_scenes` can address a specific take by its `id` (defaulting to the latest job); an unknown id is a clear `ToolError`.
 
 - `recording_start` validates the format, duration cap, exact output name, and region containment (the region must lie fully inside the selected output; corner-touching across monitor gaps is rejected), allocates private paths, launches `wf-recorder` in its own process group with stdin/stdout on devnull and stderr in a bounded log, probes for immediate startup failure, and starts a watchdog thread.
 - Capture writes a constant-frame-rate, lossless `libx264rgb` Matroska intermediate. Nothing touches MCP stdio.
@@ -111,7 +111,8 @@ The server is one Python package split into focused modules, each under the
   the burn-in mux argv (re-encodes the video). Depends on `recording`, `tts`.
 - `scenes.py`: approximate scene-cut detection and OCR fallback anchors.
 - `manager.py`: `RecordingManager` and the module-level `RECORDINGS` singleton;
-  the only owner of recording state. Depends on every other runtime module.
+  the only owner of recording state, including the per-id job registry that
+  addresses earlier takes. Depends on every other runtime module.
 - `tools.py`: MCP tool implementations and the `TOOLS` dispatch table.
 - `specs.py`: JSON schemas for `tools/list`.
 - `server.py`: the MCP protocol loop, `initialize` instructions, diagnostics,

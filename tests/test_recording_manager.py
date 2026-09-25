@@ -271,11 +271,78 @@ class ManagerLifecycleTests(unittest.TestCase):
         self.assertEqual(process.signals[0], signal.SIGINT)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class RecordingIdTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.manager = server.RecordingManager()
 
-if __name__ == "__main__":
-    unittest.main()
+    def register(self, job: recording.RecordingJob) -> recording.RecordingJob:
+        job.result = {
+            "id": job.id,
+            "phase": "completed",
+            "path": str(job.artifact),
+            "audio_included": False,
+        }
+        self.manager._jobs[job.id] = job
+        return job
+
+    def test_status_and_timeline_address_a_non_latest_job(self) -> None:
+        first = self.register(completed_job(self.tmp.name, events=[event(1, 500.0)]))
+        second = self.register(completed_job(self.tmp.name))
+        self.manager._job = second
+        self.assertEqual(self.manager.status({"id": first.id})["id"], first.id)
+        self.assertEqual(self.manager.status()["id"], second.id)
+        self.assertEqual(self.manager.timeline({"id": first.id})["id"], first.id)
+        self.assertEqual(self.manager.timeline()["id"], second.id)
+
+    def test_unknown_id_is_a_clear_error(self) -> None:
+        with self.assertRaises(server.ToolError) as ctx:
+            self.manager.status({"id": "deadbeef"})
+        self.assertIn("unknown recording id", str(ctx.exception))
+        for call in (
+            lambda: self.manager.timeline({"id": "deadbeef"}),
+            lambda: self.manager.voiceover(
+                {"id": "deadbeef", "segments": [{"anchor": {"at_ms": 0}, "text": "hi"}]}
+            ),
+            lambda: self.manager.scenes({"id": "deadbeef"}),
+        ):
+            with self.assertRaises(server.ToolError):
+                call()
+
+    def test_voiceover_targets_the_requested_job_not_the_latest(self) -> None:
+        first = self.register(completed_job(self.tmp.name, events=[event(1, 500.0)]))
+        second = self.register(completed_job(self.tmp.name))
+        self.manager._job = second
+        fresh = {
+            "codec": "av1",
+            "container": "webm",
+            "mime_type": "video/webm",
+            "width": 640,
+            "height": 360,
+            "duration_seconds": 9.75,
+            "frame_rate": 30.0,
+        }
+        with patch.object(tts, "resolve_tts_engine", return_value=server.EdgeTtsEngine()):
+            with patch.object(
+                narration, "perform_narration", return_value={"engine": "edge", "segment_count": 1}
+            ):
+                with patch.object(narration, "recording_duration_ms", return_value=9000.0):
+                    with patch.object(
+                        recording, "validate_recording_artifact", return_value=fresh
+                    ):
+                        summary = self.manager.voiceover(
+                            {
+                                "id": first.id,
+                                "segments": [{"anchor": {"event_id": 1}, "text": "hi"}],
+                            }
+                        )
+        self.assertEqual(summary["id"], first.id)
+        first.thread.join(timeout=5)
+        self.assertEqual(first.phase, "completed")
+        self.assertEqual(second.phase, "completed")
+        self.assertTrue(first.result["audio_included"])
+
 
 if __name__ == "__main__":
     unittest.main()

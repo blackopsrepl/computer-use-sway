@@ -235,7 +235,16 @@ def tool_specs() -> list[dict[str, Any]]:
                 "Report the recording lifecycle phase (idle, recording, stopping, processing, "
                 "completed, failed) plus live progress or final artifact metadata."
             ),
-            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Recording id from recording_start; defaults to the latest job.",
+                    }
+                },
+                "additionalProperties": False,
+            },
         },
         {
             "name": "recording_stop",
@@ -249,12 +258,21 @@ def tool_specs() -> list[dict[str, Any]]:
         {
             "name": "recording_timeline",
             "description": (
-                "Return the current or last recording's monotonic event timeline: every "
+                "Return a recording's monotonic event timeline: every "
                 "action/observation tool call recorded while capture ran, with a "
                 "recording-relative t_ms and a compact payload. Use event ids as narration "
                 "anchors. A sidecar JSON copy is written next to the artifact on completion."
             ),
-            "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Recording id from recording_start; defaults to the latest job.",
+                    }
+                },
+                "additionalProperties": False,
+            },
         },
         {
             "name": "recording_voiceover",
@@ -267,6 +285,10 @@ def tool_specs() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Recording id from recording_start; defaults to the latest job.",
+                    },
                     "segments": {
                         "type": "array",
                         "minItems": 1,
@@ -325,6 +347,10 @@ def tool_specs() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Recording id from recording_start; defaults to the latest job.",
+                    },
                     "threshold": {
                         "type": "number",
                         "minimum": scenes.SCENE_MIN_THRESHOLD,

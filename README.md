@@ -153,6 +153,12 @@ Recording is a three-step lifecycle designed for autonomous agents:
 optional `region` fully contained in that output, `format`, and
 `max_duration_seconds`. Only one recording may be active at a time.
 
+Multiple completed takes are addressable: `recording_status`,
+`recording_timeline`, `recording_voiceover`, and `recording_scenes` accept an
+optional `id` (the value returned by `recording_start`) and default to the
+latest job. An unknown id is a clear error, so a multi-take workflow (record A,
+record B, narrate A) cannot silently narrate the wrong take.
+
 A typical exchange, as an MCP client would issue it:
 
 ```json

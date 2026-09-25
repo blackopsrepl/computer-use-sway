@@ -16,6 +16,7 @@ class RecordingManager:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._job: recording.RecordingJob | None = None
+        self._jobs: dict[str, recording.RecordingJob] = {}
 
     # -- helpers ---------------------------------------------------------
 
@@ -96,6 +97,21 @@ class RecordingManager:
         for path in (job.intermediate, job.artifact, job.log_path):
             path.unlink(missing_ok=True)
 
+    def _select(self, requested: Any) -> recording.RecordingJob | None:
+        """Resolve an explicit recording id, defaulting to the latest job.
+
+        Caller must hold the lock. An unknown id is always a clear error so a
+        multi-take workflow cannot silently narrate the wrong take.
+        """
+        if requested is None:
+            return self._job
+        if not isinstance(requested, str) or not requested:
+            raise core.ToolError("id must be a non-empty recording id")
+        job = self._jobs.get(requested)
+        if job is None:
+            raise core.ToolError(f"unknown recording id: {requested}")
+        return job
+
     # -- lifecycle -------------------------------------------------------
 
     def start(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -130,15 +146,16 @@ class RecordingManager:
                     f"wf-recorder exited during startup (code {new_job.process.returncode})"
                     + (f": {detail}" if detail else "")
                 )
+            self._jobs[new_job.id] = new_job
             self._job = new_job
             watchdog = threading.Thread(target=self._watchdog, args=(new_job,), daemon=True)
             new_job.thread = watchdog
             watchdog.start()
             return self._summary(new_job)
 
-    def status(self) -> dict[str, Any]:
+    def status(self, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
-            job = self._job
+            job = self._select((arguments or {}).get("id"))
             if job is None:
                 return {"phase": "idle"}
             if job.phase == "recording":
@@ -195,9 +212,9 @@ class RecordingManager:
                 }
             )
 
-    def timeline(self) -> dict[str, Any]:
+    def timeline(self, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
-            job = self._job
+            job = self._select((arguments or {}).get("id"))
             if job is None:
                 return {"phase": "idle", "event_count": 0, "events": []}
             document = timeline.timeline_document(job)
@@ -208,7 +225,7 @@ class RecordingManager:
 
     def voiceover(self, arguments: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
-            job = self._job
+            job = self._select(arguments.get("id"))
             if job is None:
                 raise core.ToolError("no recording to narrate; record something first")
             if job.fmt == "gif":
@@ -219,7 +236,8 @@ class RecordingManager:
                 raise core.ToolError(
                     f"recording must be completed before narration (phase: {job.phase})"
                 )
-            request = narration.parse_narration_arguments(arguments, job)
+            narration_arguments = {key: value for key, value in arguments.items() if key != "id"}
+            request = narration.parse_narration_arguments(narration_arguments, job)
             engine = tts.resolve_tts_engine(request.engine)
             job.phase = "narrating"
             job.detail = None
@@ -241,7 +259,7 @@ class RecordingManager:
             raise core.ToolError(f"max_scenes must be between 1 and {scenes.SCENE_MAX_CUTS}")
         ocr = bool(arguments.get("ocr", False))
         with self._lock:
-            job = self._job
+            job = self._select(arguments.get("id"))
             if job is None or job.phase != "completed":
                 raise core.ToolError("no completed recording to analyze")
             artifact = job.artifact

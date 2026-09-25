@@ -58,6 +58,12 @@ exists, and do not call `recording_voiceover` before the phase is `completed`.
 - `recording_scenes`: optional approximate fallback anchors from ffmpeg scene
   cuts, with optional `tesseract` OCR.
 
+`recording_status`, `recording_timeline`, `recording_voiceover`, and
+`recording_scenes` accept an optional `id` (the recording id returned by
+`recording_start`) and default to the latest take. Pass `id` whenever you
+inspect or narrate an earlier take; an unknown id is a clear error, so a
+multi-take workflow cannot silently target the wrong recording.
+
 The `tools/list` response is the authority on schemas and defaults; this list is
 orientation, not a contract.
 
