@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.2.5](https://github.com/blackopsrepl/computer-use-sway/compare/v0.2.4...v0.2.5) (2026-09-25)
+
+
+### Bug Fixes
+
+* restore names lost when server.py was split 1b54a2e
+
 ## [0.2.4](https://github.com/blackopsrepl/computer-use-sway/compare/v0.2.3...v0.2.4) (2026-09-25)
 
 
