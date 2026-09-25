@@ -16,14 +16,17 @@ workflow.
 
 ## Decide the recording mode before you start
 
-- The user wants to explain or teach, or asks for a "demo", "screencast",
-  "walkthrough", "explainer", "voiceover", or "show how X works" -> **narrated
-  webm**. This is the default for demos.
-- The user wants visual evidence only, or says silent -> **silent webm**.
-- The result must play where `<video>` cannot (some email/chat clients) and is
-  short -> **gif**. A gif is always silent; never choose gif when sound matters.
-- If unsure, record `webm`: you can always leave it silent by skipping
-  narration, but you cannot add audio to a gif.
+- Recordings are silent by default. Record `mp4` (the default) unless a specific
+  container is required; it plays everywhere, including browsers, Apple
+  hardware, and X/Twitter.
+- Only add narration when the user **explicitly** asks for a voiceover,
+  narration, or an explainer with audio. Never narrate on your own initiative.
+- Use `webm` when you specifically want AV1 for smaller files; it is not accepted
+  by X/Twitter and is not decodable on some older Apple hardware.
+- Use `gif` only for short results that must play where `<video>` cannot (some
+  email/chat clients). A gif is always silent.
+- When asked for a narrated demo, record `mp4` (or `webm` if requested) and
+  choose a region that actually shows what you will narrate.
 
 Hard order for any narrated recording:
 `recording_start` -> perform the demo -> `recording_stop` -> poll to
@@ -45,13 +48,13 @@ exists, and do not call `recording_voiceover` before the phase is `completed`.
 - `key`: send a key with optional `ctrl`, `shift`, `alt`, or `logo` modifiers.
 - `clipboard_set` / `clipboard_get`: set/read Wayland text clipboard.
 - `recording_start`: begin recording one output (or a region inside it) as a
-  silent AV1 WebM video or a constrained GIF.
+  silent H.264 MP4 (default), AV1 WebM, or a constrained GIF.
 - `recording_status`: report the recording lifecycle phase and artifact metadata.
 - `recording_stop`: stop capture and begin finalizing the artifact.
 - `recording_timeline`: return the monotonic event log captured during a
   recording; its event ids are narration anchors.
 - `recording_voiceover`: attach a scripted, timeline-aligned narration track to a
-  completed webm. You author the prose; the server synthesizes and muxes it.
+  completed video. You author the prose; the server synthesizes and muxes it.
 - `recording_scenes`: optional approximate fallback anchors from ffmpeg scene
   cuts, with optional `tesseract` OCR.
 
@@ -79,9 +82,10 @@ orientation, not a contract.
 ## Recording (the capture step)
 
 1. `recording_start` with `output` (inferred when exactly one output is active),
-   an optional `region` fully inside that output, `format` (`webm` or `gif`),
-   and `max_duration_seconds`. For a narrated demo, record `webm` and choose a
-   region that actually shows what you will narrate.
+   an optional `region` fully inside that output, `format` (`mp4` default,
+   `webm`, or `gif`), and `max_duration_seconds`. For a narrated demo, record
+   `mp4` (or `webm` if requested) and choose a region that actually shows what
+   you will narrate.
 2. Perform the demonstration with the pointer, keyboard, and window tools while
    capture runs. Every action and observation call is timestamped automatically
    into the recording timeline; you do not need to enable anything.
@@ -91,8 +95,9 @@ orientation, not a contract.
 4. Recordings include the pointer cursor, stop automatically at the duration
    deadline, and live in a runtime directory that does not survive logout: move
    or upload finished artifacts promptly.
-5. Prefer `webm` for anything a browser will render; use `gif` only for contexts
-   that cannot run `<video>`.
+5. Prefer `mp4` for anything a browser or social platform will render; use
+   `webm` only when you specifically want AV1, and `gif` only for contexts that
+   cannot run `<video>`.
 
 ## Narrated screencast (default for demos)
 
@@ -101,8 +106,8 @@ submit it as data. The server owns timestamping, synthesis, alignment, and muxin
 
 1. Preflight with `screen_info`. Check the `binaries` map for `edge-tts`,
    `piper`, and `tesseract`, and pick the engine using the privacy rules below.
-2. Capture `webm` as in the Recording workflow. Perform the demo as **distinct
-   beats**, one visible action per thing you will narrate.
+2. Capture `mp4` (or `webm` if requested) as in the Recording workflow. Perform
+   the demo as **distinct beats**, one visible action per thing you will narrate.
 3. `recording_stop`; poll `recording_status` until `completed`. Note the `path`,
    `capture_seconds`, and `timeline_path`.
 4. Call `recording_timeline`. Anchor each upcoming segment to either an
@@ -169,7 +174,7 @@ Canonical call:
   silent recording is intact. Fix the request and call `recording_voiceover`
   again — it copies the video and drops the previous audio, so re-narration is
   safe.
-- `recording_voiceover` refuses `format=gif`; record `webm` instead.
+- `recording_voiceover` refuses `format=gif`; record `mp4` or `webm` instead.
 - For a recording with no timeline (older artifacts), `recording_scenes` gives
   approximate scene-cut anchors only; do not present them as exact.
 

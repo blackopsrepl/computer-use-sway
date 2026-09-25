@@ -143,7 +143,7 @@ optional `region` fully contained in that output, `format`, and
 A typical exchange, as an MCP client would issue it:
 
 ```json
-{"name": "recording_start", "arguments": {"output": "DP-1", "format": "webm", "max_duration_seconds": 30}}
+{"name": "recording_start", "arguments": {"output": "DP-1", "format": "mp4", "max_duration_seconds": 30}}
 {"name": "recording_stop",  "arguments": {}}
 {"name": "recording_status", "arguments": {}}
 ```
@@ -154,18 +154,19 @@ size — everything needed to publish the demo without inspecting the file.
 
 Formats:
 
-- `webm` (default): silent AV1 video in WebM at 30 fps, `yuv420p`, periodic
-  keyframes for seeking. Play it with
-  `<video autoplay loop muted playsinline>`. AV1 is not decodable on some older
-  Apple hardware; provide an H.264/MP4 fallback if you must support those
-  devices.
+- `mp4` (default): silent H.264 video in MP4 at 30 fps, `yuv420p`, `+faststart`.
+  Plays everywhere, including browsers, Apple hardware, and X/Twitter. This is
+  the recommended, widest-compatibility output.
+- `webm`: silent AV1 video in WebM at 30 fps, periodic keyframes for seeking,
+  smaller files. AV1 is not decodable on some older Apple hardware and WebM is
+  not accepted by X/Twitter, so prefer `mp4` unless you specifically want AV1.
 - `gif`: deliberately constrained fallback for contexts that cannot run
   `<video>` (some email and chat clients). Maximum 15 seconds, 12 fps, 960 px
-  maximum width, infinite loop. For ordinary web pages, prefer `webm`; a GIF of
-  the same content is far larger.
+  maximum width, infinite loop. A GIF of the same content is far larger.
 
-Both formats are silent by default; there is no audio parameter on
-`recording_start`. Narration is a separate, opt-in step.
+All formats are silent by default; there is no audio parameter on
+`recording_start`. Narration is a separate, opt-in step and inherits the
+recording's container.
 
 Behavior and limits:
 
@@ -179,7 +180,7 @@ Behavior and limits:
   permissions. That directory is runtime storage: files do not survive logout
   or reboot, so move or upload finished artifacts promptly.
 - Recordings stop automatically at `max_duration_seconds` (default 60 for
-  `webm`, 15 for `gif`) or when the intermediate exceeds 1 GiB.
+  `mp4` and `webm`, 15 for `gif`) or when the intermediate exceeds 1 GiB.
 - If finalization fails, the intermediate `.mkv` and a `.log` with the tool's
   stderr are kept and reported so the material is recoverable.
 
@@ -205,6 +206,8 @@ image data, so the timeline is safe to store and share.
 
 ### Scripted voiceover
 
+Narration is strictly opt-in: recordings are silent unless you explicitly ask
+the agent for a voiceover, narration, or an explainer with audio. When you do,
 `recording_voiceover` is the one place audio enters the pipeline. The calling
 agent writes the prose; the server validates it, synthesizes speech, aligns it
 to the timeline, and muxes it. Use `recording_timeline` first to pick anchors.
@@ -234,17 +237,19 @@ to the timeline, and muxes it. Use `recording_timeline` first to pick anchors.
 - `tail_ms` (default 300) extends the audio track past the last word.
 - `subtitles` (default `true`) burns styled captions of the narration into the
   video, synced to each segment. Because captions are drawn into the frame, this
-  re-encodes the video with the same AV1 encoder; set `subtitles: false` to keep
-  the stream-copy path and produce a caption-free video.
+  re-encodes the video with the same video encoder (H.264 for MP4, AV1 for
+  WebM); set `subtitles: false` to keep the stream-copy path and produce a
+  caption-free video.
 - Narration starts an asynchronous `narrating` phase; poll `recording_status`
   until `completed`. On success the result gains `audio_included: true` and a
   `narration` block with per-segment `start_ms`, `duration_ms`, `shift_ms`,
   `compressed`, and `word_count`. On failure the recording reverts to
   `completed` with `narration.error`.
-- With subtitles disabled the AV1 video stream is copied, never re-encoded
-  (`-c:v copy`); the added track is Opus. The artifact path is unchanged.
+- With subtitles disabled the video stream is copied, never re-encoded
+  (`-c:v copy`); the added track is AAC for MP4 or Opus for WebM. The artifact
+  path is unchanged.
 - **GIF cannot carry audio.** `recording_voiceover` refuses `format=gif` and
-  tells you to record `webm`.
+  tells you to record `mp4` or `webm`.
 
 ### Fallback anchors
 

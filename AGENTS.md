@@ -10,10 +10,10 @@ Guidance for coding agents working in this repository.
   and a missing binary is a clear `ToolError`, never a hard import failure.
 - The server is deterministic and never embeds an LLM. It owns timestamping,
   speech synthesis, alignment, and muxing; the calling agent writes the narration
-  prose.
-- The silent recording contract is frozen: silent recordings carry no audio, a
-  webm artifact has exactly one AV1 video stream, and
-  `validate_recording_artifact` keeps rejecting unexpected audio.
+  prose. Narration is strictly opt-in and must be explicitly requested.
+- The silent recording contract is frozen: silent recordings carry no audio, the
+  artifact has exactly one video stream (H.264 MP4 by default, AV1 WebM, or GIF),
+  and `validate_recording_artifact` keeps rejecting unexpected audio.
 - Only one recording may be active per process; `RecordingManager` is the single
   owner. `recording_start` must reject a second concurrent job.
 - GIF cannot carry audio; `recording_voiceover` refuses `format=gif`.

@@ -14,10 +14,12 @@ It does:
 - expose screen, window, pointer, keyboard, clipboard, and recording tools over
   MCP `tools/call`
 - reconstruct a usable Sway session environment from `/run/user/<uid>`
-- record one output or region to a silent AV1 WebM or a constrained GIF
+- record one output or region to a silent H.264 MP4 (default), AV1 WebM, or a
+  constrained GIF
 - timestamp action/observation calls into a recording-relative timeline
 - synthesize caller-authored narration, align it to timeline anchors, and mux it
-  over a copied AV1 video stream with a pluggable, runtime-detected TTS engine
+  over the recording's video stream (copied, or re-encoded when captions are
+  burned in) with a pluggable, runtime-detected TTS engine
 - optionally derive approximate scene-cut/OCR fallback anchors
 
 It does not:
@@ -67,7 +69,7 @@ Recording tools:
 
 | Tool | Arguments | Returns |
 |---|---|---|
-| `recording_start` | `output`, `region`, `format` (`webm`\|`gif`), `max_duration_seconds` | recording summary |
+| `recording_start` | `output`, `region`, `format` (`mp4`\|`webm`\|`gif`), `max_duration_seconds` | recording summary |
 | `recording_status` | none | current phase and metadata |
 | `recording_stop` | none | stopping/processing summary |
 | `recording_timeline` | none | timeline document |
@@ -80,7 +82,7 @@ Input maps to Sway seat cursor commands and `wtype`; clipboard uses `wl-copy` an
 ## Recording Lifecycle
 
 State machine: `idle` → `recording` → `stopping` → `processing` →
-`completed` | `failed`. A `completed` webm may enter `narrating` and return to
+`completed` | `failed`. A `completed` video may enter `narrating` and return to
 `completed`. Only one job exists per process; `recording_start` rejects a second
 concurrent job, and `RECORDINGS` (`manager.RecordingManager`) is the sole owner.
 
@@ -94,20 +96,23 @@ concurrent job, and `RECORDINGS` (`manager.RecordingManager`) is the sole owner.
 - The watchdog stops capture at the duration deadline or above 1 GiB.
 - `recording_stop` and the watchdog escalate `SIGINT` → `SIGTERM` → `SIGKILL`
   with bounded waits and report whether the stop was graceful.
-- Finalization runs in a daemon thread: `ffmpeg` converts to AV1 WebM (30 fps,
-  `yuv420p`, even-dimension padding, stripped metadata, keyframes every 2 s,
-  `libsvtav1` then `libaom-av1`) or GIF (12 fps, ≤960 px, palettegen/paletteuse,
-  loop). `ffprobe` then gates completion.
+- Finalization runs in a daemon thread: `ffmpeg` converts to H.264 MP4 (30 fps,
+  `yuv420p`, even-dimension padding, stripped metadata, `+faststart`) by default,
+  AV1 WebM (30 fps, keyframes every 2 s, `libsvtav1` then `libaom-av1`), or GIF
+  (12 fps, ≤960 px, palettegen/paletteuse, loop). `ffprobe` then gates
+  completion.
 - On success the intermediate and log are removed; on failure they are kept and
   reported with the artifact removed.
 - On MCP EOF, SIGINT, or SIGTERM, any active capture is stopped before exit.
 
 Formats and limits:
 
-- `webm` (default): silent AV1, 30 fps; default/cap 60/300 s.
+- `mp4` (default): silent H.264, 30 fps, `+faststart`; default/cap 60/300 s.
+- `webm`: silent AV1, 30 fps; default/cap 60/300 s.
 - `gif`: silent, max 15 s, 12 fps, ≤960 px, infinite loop.
-- `validate_recording_artifact` requires exactly one AV1 stream and zero audio
-  for webm, exactly one image stream for gif, and a readable duration.
+- `validate_recording_artifact` requires exactly one H.264 stream and zero audio
+  for mp4, exactly one AV1 stream and zero audio for webm, exactly one image
+  stream for gif, and a readable duration.
 
 ## Timeline Contract
 
@@ -131,7 +136,9 @@ action/observation call:
 
 ## Narrated Recording Contract
 
-`recording_voiceover` accepts:
+Narration is strictly opt-in: recordings are silent until the caller explicitly
+requests a voiceover, narration, or explainer with audio. `recording_voiceover`
+accepts:
 
 ```json
 {
@@ -160,13 +167,13 @@ action/observation call:
 - Measured leading silence is trimmed so the first word lands on the anchor.
 - The track is an `anullsrc` bed plus per-segment `trim`/`delay`/`amix`,
   resampled to 48 kHz stereo PCM; all times are integer milliseconds.
-- Muxing copies the video and adds one Opus track:
-  `-map 0:v:0 -map 1:a:0 -c:v copy -c:a libopus -b:a 96k -ac 2 -ar 48000`.
+- Muxing inherits the recording's container. With captions disabled it copies
+  the video and adds one audio track (`-c:v copy`, AAC for MP4 or Opus for WebM).
 - Captions are on by default: the narration text is burned in as styled ASS
   captions (white, bold, bottom-centred, boxed) synced to each segment's
-  scheduled window. Burn-in re-encodes the video with the same AV1 encoder;
-  `subtitles: false` keeps the stream-copy path and produces a caption-free
-  video.
+  scheduled window. Burn-in re-encodes the video with the same video encoder
+  (H.264 for MP4, AV1 for WebM); `subtitles: false` keeps the stream-copy path
+  and produces a caption-free video.
 - GIF is refused. A failed narration returns the job to `completed` with
   `narration.error`; the silent artifact is intact and re-narration is safe
   because the video is copied and prior audio dropped.
@@ -191,11 +198,11 @@ and `0600` files. Runtime storage does not survive logout; move or upload
 finished artifacts promptly.
 
 - `<id>.mkv`: lossless intermediate (deleted on success, kept on failure)
-- `<id>.webm` or `<id>.gif`: final artifact
+- `<id>.mp4`, `<id>.webm`, or `<id>.gif`: final artifact
 - `<id>.timeline.json`: timeline sidecar
 - `<id>.log`: recorder stderr (kept on failure)
 - `<id>.narration/`: transient TTS/track work directory (`captions.ass` included)
-- `<id>.narrated.webm.part`: transient mux output, atomically renamed in place
+- `<id>.narrated.<fmt>.part`: transient mux output, atomically renamed in place
 
 ## Diagnostics And CLI
 

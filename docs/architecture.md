@@ -10,7 +10,7 @@
 - Input: pointer actions use Sway seat cursor commands; text and key events use `wtype`.
 - Clipboard: text-only set/get through `wl-copy` and `wl-paste`.
 - Recording: `wf-recorder` captures a lossless Matroska intermediate; `ffmpeg` converts it to the requested artifact and `ffprobe` validates it.
-- Timeline and narration: action/observation tool calls are logged against a monotonic clock; an optional TTS engine (`edge-tts` or `piper`) synthesizes caller-authored prose, which is aligned to those anchors and muxed by `ffmpeg` over a copied AV1 stream. The server never generates prose.
+- Timeline and narration: action/observation tool calls are logged against a monotonic clock; an optional TTS engine (`edge-tts` or `piper`) synthesizes caller-authored prose, which is aligned to those anchors and muxed by `ffmpeg` over the recording's video stream (copied, or re-encoded when captions are burned in). The server never generates prose, and narration is only produced when the caller explicitly requests it.
 
 ## Environment Recovery
 
@@ -24,13 +24,13 @@ This lets a fresh MCP host reach the current desktop session without shell-speci
 
 ## Recording Lifecycle
 
-State machine: `recording` → `stopping` → `processing` → `completed` | `failed`; `idle` when no job exists. A `completed` webm may transition to `narrating` and back to `completed` when a voiceover is requested. Only one job exists at a time; a completed or failed job remains visible through `recording_status` until the next start.
+State machine: `recording` → `stopping` → `processing` → `completed` | `failed`; `idle` when no job exists. A `completed` video may transition to `narrating` and back to `completed` when a voiceover is requested. Only one job exists at a time; a completed or failed job remains visible through `recording_status` until the next start.
 
 - `recording_start` validates the format, duration cap, exact output name, and region containment (the region must lie fully inside the selected output; corner-touching across monitor gaps is rejected), allocates private paths, launches `wf-recorder` in its own process group with stdin/stdout on devnull and stderr in a bounded log, probes for immediate startup failure, and starts a watchdog thread.
 - Capture writes a constant-frame-rate, lossless `libx264rgb` Matroska intermediate. Nothing touches MCP stdio.
 - The watchdog stops the recording at the duration deadline or when the intermediate exceeds 1 GiB.
 - `recording_stop` and the watchdog escalate `SIGINT` → `SIGTERM` → `SIGKILL` with bounded waits and record whether the stop was graceful. Recorder processes that exit on their own are reaped by `recording_status`.
-- Finalization runs in a daemon thread: `ffmpeg` converts the intermediate to AV1/WebM (30 fps, `yuv420p`, even-dimension padding, stripped metadata, keyframes every 2 seconds, `libsvtav1` with a `libaom-av1` fallback) or to a constrained GIF (12 fps, ≤ 960 px, palettegen/paletteuse, infinite loop). `ffprobe` then gates completion on container, codec, exactly one video stream, zero audio streams, and a readable duration.
+- Finalization runs in a daemon thread: `ffmpeg` converts the intermediate to H.264/MP4 (30 fps, `yuv420p`, even-dimension padding, stripped metadata, `+faststart`) by default, AV1/WebM (30 fps, keyframes every 2 seconds, `libsvtav1` with a `libaom-av1` fallback), or a constrained GIF (12 fps, ≤ 960 px, palettegen/paletteuse, infinite loop). `ffprobe` then gates completion on container, codec, exactly one video stream, zero audio streams, and a readable duration.
 - On success the intermediate and log are deleted; on failure they are preserved and reported with the artifact path removed.
 - On MCP stdin EOF, SIGINT, or SIGTERM, the server stops any active capture before exiting; the recorder can never outlive the server. If finalization cannot finish, the intermediate survives for recovery.
 - Recordings live in `$XDG_RUNTIME_DIR/computer-use-sway/recordings` with `0700` directories and `0600` files. Callers receive server-generated paths and can never pass paths, PIDs, codec names, or extra recorder arguments through the MCP API.
@@ -68,11 +68,13 @@ optional, capability-gated extension.
   `adelay`/`amix` in a fixed `filter_complex`, resampled to 48 kHz stereo and
   written as PCM WAV. All times are integer milliseconds; there is no
   randomness.
-- **Muxing.** `ffmpeg -map 0:v:0 -map 1:a:0 -c:v copy -c:a libopus ... -f webm`
-  copies the AV1 stream and adds one Opus track, then `os.replace` swaps it into
-  place. `validate_recording_artifact(expect_audio=True)` re-probes the result to
-  require exactly one AV1 video and exactly one Opus audio stream. GIF artifacts
-  reject audio unconditionally, so voiceover is refused for `format=gif`.
+- **Muxing.** The output inherits the recording's container. With captions
+  disabled, `ffmpeg` copies the video and adds one audio track (`-c:v copy`, AAC
+  for MP4 or Opus for WebM); `os.replace` swaps it into place.
+  `validate_recording_artifact(expect_audio=True)` re-probes the result to
+  require exactly one video and exactly one audio stream with the container's
+  codecs (H.264/AAC for MP4, AV1/Opus for WebM). GIF artifacts reject audio
+  unconditionally, so voiceover is refused for `format=gif`.
 - **Revert on failure.** A narration failure returns the job to `completed` (the
   silent recording is still valid) and attaches `narration.error` to the result
   rather than discarding a good recording.
