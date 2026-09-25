@@ -70,6 +70,20 @@ sudo apt install python3 sway grim wtype wl-clipboard wf-recorder ffmpeg
 
 Non-recording tools work without the recording binaries; recording tools fail with a clear error until they are installed.
 
+To enable narration and OCR on openSUSE, install the optional tools separately.
+`edge-tts` is a Python application rather than a distro package, so install it
+with `pipx`, which the distribution does package:
+
+```bash
+sudo zypper in python313-pipx tesseract-ocr
+pipx install edge-tts
+```
+
+`pipx` places the `edge-tts` console script in `~/.local/bin`, which the server
+already searches. `piper` has no openSUSE package: install the upstream binary
+and a voice model, then set `COMPUTER_USE_SWAY_PIPER_MODEL` to the model path if
+you need narration that never leaves the host.
+
 ## Install
 
 From a checkout:
