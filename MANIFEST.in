@@ -3,7 +3,6 @@ include README.md
 include WIREFRAME.md
 include AGENTS.md
 include assets/mascot.png
-include assets/computer-use-sway-demo.webm
 include assets/computer-use-sway-demo.mp4
 include assets/computer-use-sway-demo.gif
 recursive-include docs *.md

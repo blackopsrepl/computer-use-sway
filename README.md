@@ -18,10 +18,9 @@ the spoken words rendered as burned-in captions.
 
 ![computer-use-sway driving a live terminal with burned-in captions](assets/computer-use-sway-demo.gif)
 
-Full narrated video:
+Full narrated video (the server's native MP4/H.264 output):
 
-- [MP4, H.264/AAC](assets/computer-use-sway-demo.mp4) — plays everywhere, including X/Twitter
-- [WebM, AV1/Opus](assets/computer-use-sway-demo.webm) — the server's native artifact
+- [computer-use-sway-demo.mp4](assets/computer-use-sway-demo.mp4) — plays in browsers, on Apple hardware, and on X/Twitter
 
 ## Capabilities
 
