@@ -25,10 +25,9 @@ from .specs import *
 from .timeline import *
 from .tools import *
 from .tts import *
+from .version import *
 
 
-SERVER_NAME = "computer-use-sway"
-SERVER_VERSION = "0.2.4"
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
 

@@ -8,7 +8,7 @@ const pyproject = {
 };
 
 const serverVersion = {
-  filename: "src/computer_use_sway/server.py",
+  filename: "src/computer_use_sway/version.py",
   updater: {
     readVersion: (contents) => contents.match(/^SERVER_VERSION = "(.*)"$/m)[1],
     writeVersion: (contents, version) =>

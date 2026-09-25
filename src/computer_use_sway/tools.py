@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 import time
 from typing import Any
 
 from . import core, desktop, manager, tts
+from .version import SERVER_NAME, SERVER_VERSION
 
 
 def tool_recording_start(arguments: dict[str, Any]) -> list[dict[str, str]]:
@@ -208,7 +210,7 @@ def tool_drag(arguments: dict[str, Any]) -> list[dict[str, str]]:
         try:
             desktop.sway_cursor("release", button)
         except core.ToolError as exc:
-            eprint(f"drag release failed: {exc}")
+            core.eprint(f"drag release failed: {exc}")
     return core.json_text(
         {
             "dragged": True,

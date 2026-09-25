@@ -1,6 +1,6 @@
 """Computer-use MCP server for Sway."""
 
-from .server import SERVER_VERSION
+from .version import SERVER_VERSION
 
 __version__ = SERVER_VERSION
 

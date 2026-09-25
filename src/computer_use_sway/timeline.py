@@ -63,7 +63,7 @@ def timeline_payload(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def timeline_document(job: RecordingJob) -> dict[str, Any]:
+def timeline_document(job: recording.RecordingJob) -> dict[str, Any]:
     end = job.ended_monotonic if job.ended_monotonic is not None else time.monotonic()
     return {
         "id": job.id,
@@ -77,7 +77,7 @@ def timeline_document(job: RecordingJob) -> dict[str, Any]:
     }
 
 
-def write_timeline_sidecar(job: RecordingJob) -> Path | None:
+def write_timeline_sidecar(job: recording.RecordingJob) -> Path | None:
     from . import recording as _recording
 
     if job.timeline_path is None:

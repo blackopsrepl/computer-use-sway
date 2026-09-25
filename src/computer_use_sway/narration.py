@@ -49,7 +49,7 @@ class NarrationSchedule:
     total_ms: float
 
 
-def recording_capture_ms(job: RecordingJob) -> float:
+def recording_capture_ms(job: recording.RecordingJob) -> float:
     end = job.ended_monotonic if job.ended_monotonic is not None else time.monotonic()
     return round(max(end - job.started_monotonic, 0.0) * 1000.0, 3)
 
@@ -102,7 +102,7 @@ def parse_narration_segment(
     return NarrationSegment(index, None, at_ms, text)
 
 
-def parse_narration_arguments(arguments: dict[str, Any], job: RecordingJob) -> NarrationRequest:
+def parse_narration_arguments(arguments: dict[str, Any], job: recording.RecordingJob) -> NarrationRequest:
     if not isinstance(arguments, dict):
         raise core.ToolError("narration arguments must be an object")
     unknown = set(arguments) - {"segments", "engine", "voice", "offset_ms", "fit", "tail_ms", "subtitles"}
@@ -155,7 +155,7 @@ def parse_narration_arguments(arguments: dict[str, Any], job: RecordingJob) -> N
 
 
 def resolve_segment_anchors(
-    request: NarrationRequest, job: RecordingJob
+    request: NarrationRequest, job: recording.RecordingJob
 ) -> list[tuple[NarrationSegment, float]]:
     event_times = {int(event["id"]): float(event["t_ms"]) for event in job.events}
     anchored: list[tuple[NarrationSegment, float]] = []
@@ -281,7 +281,7 @@ def narration_track_argv(
 
 
 def perform_narration(
-    job: RecordingJob, request: NarrationRequest, engine: TtsEngine
+    job: recording.RecordingJob, request: NarrationRequest, engine: tts.TtsEngine
 ) -> dict[str, Any]:
     capture_ms = recording_capture_ms(job)
     anchored = resolve_segment_anchors(request, job)
