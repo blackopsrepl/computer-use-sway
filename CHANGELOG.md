@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.2.4](https://github.com/blackopsrepl/computer-use-sway/compare/v0.2.3...v0.2.4) (2026-09-25)
+
+
+### Features
+
+* **recording:** default to MP4/H.264 for widest compatibility cbdfaac
+
 ## [0.2.3](https://github.com/blackopsrepl/computer-use-sway/compare/v0.2.2...v0.2.3) (2026-09-24)
 
 

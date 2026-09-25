@@ -28,7 +28,7 @@ from .tts import *
 
 
 SERVER_NAME = "computer-use-sway"
-SERVER_VERSION = "0.2.3"
+SERVER_VERSION = "0.2.4"
 MCP_PROTOCOL_VERSION = "2024-11-05"
 
 
