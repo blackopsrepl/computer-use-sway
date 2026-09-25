@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import shutil
 import time
+from pathlib import Path
 from typing import Any
 
 from . import core, desktop, manager, tts
@@ -78,14 +80,32 @@ def tool_screen_info(_: dict[str, Any]) -> list[dict[str, str]]:
     return core.json_text(info)
 
 
+def write_private_bytes(path: Path, data: bytes) -> None:
+    fd = os.open(path, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+    try:
+        os.write(fd, data)
+    finally:
+        os.close(fd)
+    os.chmod(path, 0o600)
+
+
 def tool_screenshot(arguments: dict[str, Any]) -> list[dict[str, str]]:
     core.require_binaries(["grim"])
     include_cursor = bool(arguments.get("include_cursor", True))
+    save_path = arguments.get("save_path")
     output_mode = arguments.get("output")
-    if output_mode is None:
-        output_mode = "image"
-    if output_mode not in {"image", "data_url", "both"}:
-        raise core.ToolError("output must be null, image, data_url, or both")
+    if save_path is not None:
+        if not isinstance(save_path, str) or not save_path:
+            raise core.ToolError("save_path must be a non-empty string")
+        if output_mode is not None:
+            raise core.ToolError(
+                "save_path cannot be combined with output; save_path returns text-only metadata"
+            )
+    else:
+        if output_mode is None:
+            output_mode = "image"
+        if output_mode not in {"image", "data_url", "both"}:
+            raise core.ToolError("output must be null, image, data_url, or both")
     region = desktop.validate_region(arguments.get("region"))
 
     args = ["grim"]
@@ -98,7 +118,6 @@ def tool_screenshot(arguments: dict[str, Any]) -> list[dict[str, str]]:
     data = core.run_command(args, timeout=10.0, binary=True).stdout
     if not data:
         raise core.ToolError("grim returned an empty screenshot")
-    encoded = base64.b64encode(data).decode("ascii")
     meta = {
         "mimeType": "image/png",
         "bytes": len(data),
@@ -106,6 +125,20 @@ def tool_screenshot(arguments: dict[str, Any]) -> list[dict[str, str]]:
         "include_cursor": include_cursor,
         "region": region,
     }
+    if save_path is not None:
+        target = Path(save_path)
+        if target.is_dir():
+            raise core.ToolError(f"save_path is a directory: {target}")
+        if not target.parent.is_dir():
+            raise core.ToolError(f"save_path parent directory does not exist: {target.parent}")
+        try:
+            write_private_bytes(target, data)
+        except OSError as exc:
+            raise core.ToolError(f"could not write screenshot to {target}: {exc}") from exc
+        meta["saved_to"] = str(target)
+        return [{"type": "text", "text": json.dumps(meta, indent=2)}]
+
+    encoded = base64.b64encode(data).decode("ascii")
     content = [{"type": "text", "text": json.dumps(meta, indent=2)}]
     if output_mode in {"image", "both"}:
         content.append({"type": "image", "mimeType": "image/png", "data": encoded})

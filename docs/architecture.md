@@ -6,7 +6,9 @@
 
 - MCP transport: JSON-RPC messages over stdin/stdout.
 - Desktop backend: Sway IPC through `swaymsg`.
-- Screenshots: `grim` returns PNG bytes directly to MCP image content.
+- Screenshots: `grim` returns PNG bytes; by default they become MCP image
+  content, or `save_path` writes them to a `0600` file and returns text-only
+  metadata so long runs do not exhaust a host's per-request image budget.
 - Input: pointer actions use Sway seat cursor commands; text and key events use `wtype`.
 - Clipboard: text-only set/get through `wl-copy` and `wl-paste`.
 - Recording: `wf-recorder` captures a lossless Matroska intermediate; `ffmpeg` converts it to the requested artifact and `ffprobe` validates it.

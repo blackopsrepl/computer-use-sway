@@ -25,7 +25,8 @@ Full narrated video (the server's native MP4/H.264 output):
 ## Capabilities
 
 - Inspect active outputs, seats, focused windows, and required binaries.
-- Capture screenshots as MCP image content or data URLs.
+- Capture screenshots as MCP image content, data URLs, or a private file on
+  disk (`save_path`) for flat image budgets.
 - Return a simplified Sway window tree.
 - Focus windows by container ID, app ID, class, or title.
 - Move the pointer, click, drag, and scroll.
@@ -34,6 +35,24 @@ Full narrated video (the server's native MP4/H.264 output):
 - Record a screen region as a silent web-ready video or constrained GIF.
 - Capture a monotonic event timeline during recording and optionally attach a
   scripted, timeline-aligned voiceover track.
+
+## Screenshots and image budgets
+
+`screenshot` captures the current output or a rectangular region as PNG. By
+default it returns the PNG as MCP image content (or a data URL when `output` is
+set). MCP hosts that cap the number of images per request become unusable after
+a few dozen screenshots; to keep the image budget flat, pass `save_path`:
+
+```json
+{"name": "screenshot", "arguments": {"save_path": "/run/user/1000/shots/step-01.png"}}
+```
+
+`save_path` writes the PNG to that exact path (mode `0600`; the parent directory
+must exist) and returns the same text metadata (`bytes`, `dimensions`, `region`,
+`include_cursor`, plus `saved_to`) with no image block, so a long automation run
+can keep capturing indefinitely. Inspect the saved files with local tooling
+(for example `tesseract` for OCR) instead of routing image bytes back through
+the MCP host. `save_path` and `output` are mutually exclusive.
 
 ## Requirements
 

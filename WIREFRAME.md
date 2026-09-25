@@ -53,7 +53,7 @@ Observation and input tools:
 | Tool | Arguments | Returns |
 |---|---|---|
 | `screen_info` | none | server, seat, bounds, active outputs, focused window, binary locations |
-| `screenshot` | `include_cursor` (bool, true), `output` (`image`\|`data_url`\|`both`\|null), `region` | text metadata plus PNG image and/or data URL |
+| `screenshot` | `include_cursor` (bool, true), `output` (`image`\|`data_url`\|`both`\|null), `save_path`, `region` | text metadata plus PNG image and/or data URL, or text-only metadata when `save_path` is set |
 | `window_tree` | `include_scratchpad` (false), `max_depth` (1–50, 12) | simplified windows and count |
 | `focus_window` | one of `con_id`/`app_id`/`class`/`title`, `match` (`contains`\|`exact`\|`regex`) | before/selected/after |
 | `move_pointer` | `x`, `y`, `mode` (`set`\|`move`) | moved, mode, x, y, seat |
@@ -82,7 +82,10 @@ the latest job, and an unknown id is a clear `ToolError`. This lets a multi-take
 workflow address an earlier take instead of silently using the newest one.
 
 Input maps to Sway seat cursor commands and `wtype`; clipboard uses `wl-copy` and
-`wl-paste`. Every schema sets `additionalProperties: false`.
+`wl-paste`. Every schema sets `additionalProperties: false`. `screenshot`
+returns MCP image content by default; with `save_path` it writes the PNG to that
+exact path (mode `0600`, parent directory must exist) and returns text-only
+metadata, which keeps hosts' per-request image budgets flat.
 
 ## Recording Lifecycle
 

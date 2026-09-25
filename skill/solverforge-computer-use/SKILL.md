@@ -37,7 +37,8 @@ exists, and do not call `recording_voiceover` before the phase is `completed`.
 ## Tools
 
 - `screen_info`: inspect active Sway outputs, seat, focused window, and required binaries.
-- `screenshot`: capture the current Sway screen or a rectangular region as PNG.
+- `screenshot`: capture the current Sway screen or a rectangular region as PNG;
+  pass `save_path` to write it to disk and return text-only metadata.
 - `window_tree`: return a simplified Sway window tree.
 - `focus_window`: focus a Sway window by `con_id`, `app_id`, `class`, or `title`.
 - `move_pointer`: move the Sway pointer in logical output coordinates.
@@ -84,6 +85,19 @@ orientation, not a contract.
    actions, software installation, or system-setting changes.
 8. Never bypass browser security warnings or other safety barriers.
 9. Report the final visible result and any unresolved limitation.
+
+## Screenshots and image budget
+
+MCP hosts cap how many images one request may include; a long run can start
+failing with "a request may include at most 20 images" after a few dozen
+`screenshot` calls. When you expect many screenshots, pass `save_path` to write
+each PNG to disk (mode `0600`; the parent directory must exist). The tool then
+returns only text metadata (`bytes`, `dimensions`, `region`, `include_cursor`,
+`saved_to`) with no image block, so the image budget stays flat. Read the files
+with local tooling (for example `tesseract` for OCR) instead of routing image
+bytes back through the MCP host. `save_path` and `output` are mutually
+exclusive; use the in-memory image form only when you actually need to see the
+pixels.
 
 ## Recording (the capture step)
 

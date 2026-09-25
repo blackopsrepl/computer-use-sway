@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 import json
 import os
+import stat
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -53,6 +55,38 @@ class ScreenshotTests(unittest.TestCase):
             data_url["text"],
             "data:image/png;base64," + base64.b64encode(png).decode("ascii"),
         )
+
+    def test_save_path_writes_private_png_and_returns_text_only(self) -> None:
+        png = b"\x89PNG\r\n\x1a\n" + b"payload"
+        completed = core.CommandResult(stdout=png, stderr=b"", returncode=0)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, "shot.png")
+            with patch.object(core, "require_binaries"), patch.object(
+                server.desktop, "validate_region", return_value=None
+            ), patch.object(core, "run_command", return_value=completed):
+                content = server.tool_screenshot({"save_path": target})
+            self.assertEqual(len(content), 1)
+            self.assertEqual(content[0]["type"], "text")
+            meta = json.loads(content[0]["text"])
+            self.assertEqual(meta["bytes"], len(png))
+            self.assertEqual(meta["saved_to"], target)
+            with open(target, "rb") as handle:
+                self.assertEqual(handle.read(), png)
+            self.assertEqual(stat.S_IMODE(os.stat(target).st_mode), 0o600)
+
+    def test_save_path_requires_existing_parent(self) -> None:
+        png = b"\x89PNG\r\n\x1a\n" + b"payload"
+        completed = core.CommandResult(stdout=png, stderr=b"", returncode=0)
+        with patch.object(core, "require_binaries"), patch.object(
+            server.desktop, "validate_region", return_value=None
+        ), patch.object(core, "run_command", return_value=completed):
+            with self.assertRaises(server.ToolError):
+                server.tool_screenshot({"save_path": "/nonexistent-pvd-dir/shot.png"})
+
+    def test_save_path_and_output_are_mutually_exclusive(self) -> None:
+        with patch.object(core, "require_binaries"):
+            with self.assertRaises(server.ToolError):
+                server.tool_screenshot({"save_path": "/tmp/shot.png", "output": "both"})
 
 
 class DragTests(unittest.TestCase):

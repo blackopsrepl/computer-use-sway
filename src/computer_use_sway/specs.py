@@ -14,12 +14,24 @@ def tool_specs() -> list[dict[str, Any]]:
         },
         {
             "name": "screenshot",
-            "description": "Capture the current Sway screen or a rectangular region as PNG.",
+            "description": (
+                "Capture the current Sway screen or a rectangular region as PNG. By default "
+                "the PNG is returned as MCP image content; pass save_path to write it to disk "
+                "and return text-only metadata instead."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "include_cursor": {"type": "boolean", "default": True},
                     "output": {"type": ["string", "null"], "enum": ["image", "data_url", "both", None]},
+                    "save_path": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "Absolute path to write the PNG (mode 0600; the parent directory "
+                            "must exist). When set, returns text-only metadata and no image "
+                            "block; cannot be combined with output."
+                        ),
+                    },
                     "region": {
                         "type": ["object", "null"],
                         "properties": {
