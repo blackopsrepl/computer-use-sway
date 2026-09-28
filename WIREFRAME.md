@@ -1,237 +1,113 @@
 # WIREFRAME.md
 
 This document is the current-state contract for the shipped `computer-use-sway`
-MCP server: its tool surface, recording and narration lifecycle, artifacts, and
-runtime files. It describes what exists now, not a roadmap.
+MCP server: its tool surface, its published timeline stream, and its runtime
+files. It describes what exists now, not a roadmap.
 
 ## Scope
 
-`computer-use-sway` is a zero-runtime-dependency Python MCP stdio server that
-lets an MCP client inspect and operate the current Sway/Wayland desktop.
+`computer-use-sway` is a single-process MCP stdio server that inspects and operates
+the current Sway session. It is not a recorder: recording and narration live in a
+separate server, `seshat` (<https://github.com/blackopsrepl/seshat>).
 
 It does:
 
-- expose screen, window, pointer, keyboard, clipboard, and recording tools over
-  MCP `tools/call`
-- reconstruct a usable Sway session environment from `/run/user/<uid>`
-- record one output or region to a silent H.264 MP4 (default), AV1 WebM, or a
-  constrained GIF
-- timestamp action/observation calls into a recording-relative timeline
-- synthesize caller-authored narration, align it to timeline anchors, and mux it
-  over the recording's video stream (copied, or re-encoded when captions are
-  burned in) with a pluggable, runtime-detected TTS engine
-- optionally derive approximate scene-cut/OCR fallback anchors
+- expose screen, window, pointer, keyboard and clipboard tools over MCP stdio
+- recover the session environment (`XDG_RUNTIME_DIR`, `SWAYSOCK`, `WAYLAND_DISPLAY`)
+  when an MCP host launches it with a stripped environment
+- publish every dispatched action to the take timeline stream a recorder reads
 
 It does not:
 
+- record, encode, narrate or caption anything
+- keep state between sessions, or own a child process beyond a single command
 - embed or call an LLM, or generate narration prose
-- add a network listener; the transport is stdio
-- hard-import any TTS, OCR, or scene dependency (`dependencies = []`)
-- let callers pass paths, PIDs, codec names, or extra recorder arguments
-- carry audio in GIF
+- open a network listener
 
 ## Protocol Surface
 
-Transport is newline-delimited JSON-RPC over stdin/stdout. Methods:
+MCP protocol version `2024-11-05`, stdio transport, no notification or resource
+surface. `initialize` returns the server name, version and operating instructions;
+`tools/list` returns the twelve tool schemas; `tools/call` dispatches, and every
+call — success or failure — is published to the timeline stream.
 
-- `initialize` returns `protocolVersion` `2024-11-05`, `capabilities.tools`,
-  `serverInfo`, and `instructions` (the operating procedure every client gets).
-- `notifications/initialized` returns no response.
-- `tools/list` returns the schemas from `specs.py`.
-- `tools/call` dispatches by name; unknown tools and expected failures return
-  `isError: true` with a text message; unexpected exceptions are logged to
-  stderr and returned as a generic internal error.
-
-The `tools/call` handler also captures a monotonic timestamp before each
-non-recording tool call and records it into the active timeline when a recording
-is running.
+Tool errors are returned as MCP tool results with `isError: true` and a specific
+message, never as transport errors. Unexpected exceptions are logged to stderr and
+reported as a generic internal error.
 
 ## Tool Catalog
 
-Observation and input tools:
+Twelve tools: five observation, seven input.
 
-| Tool | Arguments | Returns |
+| tool | arguments | returns |
 |---|---|---|
-| `screen_info` | none | server, seat, bounds, active outputs, focused window, binary locations |
-| `screenshot` | `include_cursor` (bool, true), `output` (`image`\|`data_url`\|`both`\|null), `save_path`, `region` | text metadata plus PNG image and/or data URL, or text-only metadata when `save_path` is set |
-| `window_tree` | `include_scratchpad` (false), `max_depth` (1–50, 12) | simplified windows and count |
-| `focus_window` | one of `con_id`/`app_id`/`class`/`title`, `match` (`contains`\|`exact`\|`regex`) | before/selected/after |
-| `move_pointer` | `x`, `y`, `mode` (`set`\|`move`) | moved, mode, x, y, seat |
-| `click` | optional `x`,`y`, `button` (`left`\|`middle`\|`right`), `count` (1–3), `interval_ms` (0–5000) | clicked, coordinates, button, count |
-| `drag` | `from` {x,y}, `to` {x,y}, `button`, `steps` (1–100), `duration_ms` (0–10000) | dragged path summary |
-| `scroll` | optional `x`,`y`, `direction` (`up`\|`down`\|`left`\|`right`), `clicks` (1–100) | scrolled, direction, clicks |
-| `type_text` | `text` (≤10000, no NUL), `delay_ms` (0–5000) | typed, characters, delay_ms |
-| `key` | `key`, `modifiers` ⊆ {ctrl, shift, alt, logo} | sent, key, modifiers |
-| `clipboard_set` | `text` (≤100000 bytes, no NUL) | clipboard_set, bytes |
-| `clipboard_get` | `max_bytes` (1–100000) | text, bytes |
+| `screen_info` | none | outputs, seat, focused window, binaries, bounds |
+| `screenshot` | `include_cursor`, `output` (`image`\|`data_url`\|`both`), `save_path`, `region` | PNG as MCP image content, a data URL, or text-only metadata when `save_path` is set |
+| `window_tree` | `include_scratchpad`, `max_depth` | simplified Sway window tree |
+| `focus_window` | exactly one of `con_id`, `app_id`, `class`, `title`; `match` (`exact`\|`contains`\|`regex`) | focused window before, selected, and after |
+| `move_pointer` | `x`, `y`, `mode` (`set`\|`move`) | cursor position |
+| `click` | optional `x`, `y`; `button`, `count`, `interval_ms` | click summary |
+| `drag` | `from`, `to`; `button`, `steps`, `duration_ms` | drag summary |
+| `scroll` | optional `x`, `y`; `direction`, `clicks` | scroll summary |
+| `type_text` | `text`, `delay_ms` | characters typed |
+| `key` | `key`, `modifiers` | key sent |
+| `clipboard_set` | `text` | bytes set |
+| `clipboard_get` | `max_bytes` | clipboard text |
 
-Recording tools:
+`screenshot` is the only tool that returns image content; `save_path` exists for
+hosts whose per-request image budget makes repeated screenshots unusable.
 
-| Tool | Arguments | Returns |
-|---|---|---|
-| `recording_start` | `output`, `region`, `format` (`mp4`\|`webm`\|`gif`), `max_duration_seconds` | recording summary |
-| `recording_status` | optional `id` | current phase and metadata |
-| `recording_stop` | none | stopping/processing summary |
-| `recording_timeline` | optional `id` | timeline document |
-| `recording_voiceover` | optional `id`, `segments`, `engine`, `voice`, `offset_ms`, `fit`, `tail_ms`, `subtitles` | narrating summary |
-| `recording_scenes` | optional `id`, `threshold`, `max_scenes`, `ocr` | approximate scene anchors |
+## Timeline Publication
 
-`recording_status`, `recording_timeline`, `recording_voiceover`, and
-`recording_scenes` accept the `id` returned by `recording_start`; it defaults to
-the latest job, and an unknown id is a clear `ToolError`. This lets a multi-take
-workflow address an earlier take instead of silently using the newest one.
+This server does not record. It publishes what it dispatches, so that a recorder
+in a separate process can anchor narration to it:
 
-Input maps to Sway seat cursor commands and `wtype`; clipboard uses `wl-copy` and
-`wl-paste`. Every schema sets `additionalProperties: false`. `screenshot`
-returns MCP image content by default; with `save_path` it writes the PNG to that
-exact path (mode `0600`, parent directory must exist) and returns text-only
-metadata, which keeps hosts' per-request image budgets flat.
-
-## Recording Lifecycle
-
-State machine: `idle` → `recording` → `stopping` → `processing` →
-`completed` | `failed`. A `completed` video may enter `narrating` and return to
-`completed`. Only one job exists per process; `recording_start` rejects a second
-concurrent job, and `RECORDINGS` (`manager.RecordingManager`) is the sole owner.
-
-- `recording_start` requires `wf-recorder`, `ffmpeg`, and `ffprobe`; validates
-  the output name, region containment, format, and duration cap; allocates
-  `0700`/`0600` paths; launches `wf-recorder` in its own session with stdio on
-  devnull and a bounded stderr log; probes for startup failure; and starts a
-  watchdog.
-- Capture writes a constant-frame-rate, lossless `libx264rgb` Matroska
-  intermediate. Nothing touches MCP stdio.
-- The watchdog stops capture at the duration deadline or above 1 GiB.
-- `recording_stop` and the watchdog escalate `SIGINT` → `SIGTERM` → `SIGKILL`
-  with bounded waits and report whether the stop was graceful.
-- Finalization runs in a daemon thread: `ffmpeg` converts to H.264 MP4 (30 fps,
-  `yuv420p`, even-dimension padding, stripped metadata, `+faststart`) by default,
-  AV1 WebM (30 fps, keyframes every 2 s, `libsvtav1` then `libaom-av1`), or GIF
-  (12 fps, ≤960 px, palettegen/paletteuse, loop). `ffprobe` then gates
-  completion.
-- On success the intermediate and log are removed; on failure they are kept and
-  reported with the artifact removed.
-- On MCP EOF, SIGINT, or SIGTERM, any active capture is stopped before exit.
-
-Formats and limits:
-
-- `mp4` (default): silent H.264, 30 fps, `+faststart`; default/cap 60/300 s.
-- `webm`: silent AV1, 30 fps; default/cap 60/300 s.
-- `gif`: silent, max 15 s, 12 fps, ≤960 px, infinite loop.
-- `validate_recording_artifact` requires exactly one H.264 stream and zero audio
-  for mp4, exactly one AV1 stream and zero audio for webm, exactly one image
-  stream for gif, and a readable duration.
-
-## Timeline Contract
-
-While phase is `recording`, the dispatch layer appends one event per
-action/observation call:
-
-```json
-{"id": 1, "t_ms": 1479.319, "tool": "move_pointer", "ok": true, "payload": {"x": 320, "y": 180, "mode": "set"}}
+```
+$XDG_RUNTIME_DIR/seshat/streams/computer-use-sway.jsonl
+{"at_monotonic": 12345.678, "tool": "click", "ok": true,
+ "payload": {"x": 640, "y": 360}, "source": "computer-use-sway"}
 ```
 
-- `id` increments from 1; `t_ms` is `event_monotonic - started_monotonic` in
-  milliseconds, clamped at zero.
-- Payloads are curated and non-sensitive: coordinates, buttons, counts, key
-  names, window identifiers, and byte/character counts. Typed text, clipboard
-  contents, and screenshot bytes are never stored.
-- `recording_timeline` serves the live document; on completion the same document
-  is written as a `0600` sidecar `<id>.timeline.json` and reported as
-  `timeline_path`. `capture_seconds` reflects the recording window; the first
-  captured frame trails `started_monotonic` by a small, constant launch latency
-  that the narration `offset_ms` option can compensate.
+- `at_monotonic` is CLOCK_MONOTONIC seconds from `time.monotonic()`. The clock is
+  host-wide, so these timestamps are directly comparable with a recorder's own
+  epoch; no handshake or session id is involved.
+- `tool` is the dispatched tool name. `ok` reports whether the call succeeded —
+  a published event records a **dispatch**, never a verified visible effect.
+- `payload` is curated here, by the server that knows what its arguments mean:
+  typed text becomes a character count and clipboard content a byte count, and
+  neither value ever reaches the file.
+- The stream is truncated once at server startup and appended to while it runs.
+  Publishing is a side channel: a missing runtime directory, an unwritable path
+  or any write error is swallowed, because narration must never be able to break
+  an action.
+- Only the twelve action and observation tools are published; `seshat`'s own
+  recording tools are not this server's business.
 
-## Narrated Recording Contract
+The recording lifecycle, narration contract, artifact contract and fallback
+anchors live in `seshat`'s WIREFRAME.md.
 
-Narration is strictly opt-in: recordings are silent until the caller explicitly
-requests a voiceover, narration, or explainer with audio. `recording_voiceover`
-accepts:
+## Runtime Files
 
-```json
-{
-  "segments": [{"anchor": {"event_id": 1}, "text": "First I open Settings."}],
-  "engine": "auto",
-  "voice": null,
-  "offset_ms": 0,
-  "fit": "natural",
-  "tail_ms": 300,
-  "subtitles": true
-}
-```
+This server writes one file: the timeline stream at
+`$XDG_RUNTIME_DIR/seshat/streams/computer-use-sway.jsonl` (directory `0700`, file
+`0600`), truncated at startup and appended to while the server runs. Screenshots
+written with `save_path` go to the caller's path at mode `0600`.
 
-- Each segment has exactly one anchor: `event_id` (a timeline id) or `at_ms`
-  (absolute milliseconds, within the published artifact's duration plus slack).
-  The anchor positions the first spoken word.
-- The artifact on disk at `job.artifact` is the single source of truth for
-  post-processing: anchor validation and scheduling both use its measured
-  `ffprobe` duration, and the mux reads that same file. If the artifact's
-  duration disagrees with `capture_seconds` (for example after a manual trim),
-  the artifact wins; an unreadable artifact is a clear `ToolError`, never a
-  fallback to the capture wall-clock or the discarded intermediate.
-- Text is caller-authored, non-empty, ≤2000 chars per segment and ≤10000 total.
-- `engine`: `auto` (prefers `edge`, then `piper`), `edge`, or `piper`; a missing
-  engine is a clear `ToolError`, never a silent substitution. `edge-tts`
-  transmits the prose to Microsoft; `piper` is offline and needs `voice` (a model
-  path) or `COMPUTER_USE_SWAY_PIPER_MODEL`.
-- `fit`: `natural` pushes overlapping segments forward (`start = max(anchor,
-  previous_end + 60 ms)`); `compress` time-compresses a segment that would
-  overrun the next anchor using chained `atempo`. `tail_ms` (≤2000) extends the
-  track past the last word.
-- Measured leading silence is trimmed so the first word lands on the anchor.
-- The track is an `anullsrc` bed plus per-segment `trim`/`delay`/`amix`,
-  resampled to 48 kHz stereo PCM; all times are integer milliseconds.
-- Muxing inherits the recording's container. With captions disabled it copies
-  the video and adds one audio track (`-c:v copy`, AAC for MP4 or Opus for WebM).
-- Captions are on by default: the narration text is burned in as styled ASS
-  captions (white, bold, bottom-centred, boxed) synced to each segment's
-  scheduled window. Burn-in re-encodes the video with the same video encoder
-  (H.264 for MP4, AV1 for WebM); `subtitles: false` keeps the stream-copy path
-  and produces a caption-free video.
-- GIF is refused. A failed narration returns the job to `completed` with
-  `narration.error`; the silent artifact is intact and re-narration is safe
-  because the video is copied and prior audio dropped.
-
-Completed result additions: `audio_included`, `timeline_path`,
-`timeline_event_count`, and `narration` (`engine`, `voice`, `offset_ms`, `fit`,
-`subtitles`, `segment_count`, `total_duration_ms`, and per-segment `start_ms`,
-`duration_ms`, `lead_silence_ms`, `shift_ms`, `tempo`, `compressed`,
-`word_count`).
-
-## Fallback Anchors
-
-`recording_scenes` runs on a completed recording and returns approximate
-anchors: `ffmpeg select='gt(scene,T)',showinfo` timestamps (threshold 0.05–0.95,
-default 0.30) and, with `ocr: true` and `tesseract` present, keyframe text. These
-are secondary evidence only, never the sync mechanism.
-
-## Artifacts And Files
-
-Directory: `$XDG_RUNTIME_DIR/computer-use-sway/recordings`, `0700` directories
-and `0600` files. Runtime storage does not survive logout; move or upload
-finished artifacts promptly.
-
-- `<id>.mkv`: lossless intermediate (deleted on success, kept on failure)
-- `<id>.mp4`, `<id>.webm`, or `<id>.gif`: final artifact
-- `<id>.timeline.json`: timeline sidecar
-- `<id>.log`: recorder stderr (kept on failure)
-- `<id>.narration/`: transient TTS/track work directory (`captions.ass` included)
-- `<id>.narrated.<fmt>.part`: transient mux output, atomically renamed in place
+Recordings, timeline sidecars, narration work directories and caption files belong
+to `seshat`.
 
 ## Diagnostics And CLI
 
-```text
-computer-use-sway                 # run MCP server over stdio
-computer-use-sway --self-test     # non-mutating session and binary checks
-computer-use-sway --doctor        # detailed environment and session report
-computer-use-sway --install-codex-mcp
-computer-use-sway --uninstall-codex-mcp
+```bash
+computer-use-sway --self-test              # environment, binaries, outputs, seat, focus
+computer-use-sway --doctor                 # full JSON report, including the stream path
+computer-use-sway --install-codex-mcp      # register with Codex
+computer-use-sway --uninstall-codex-mcp    # remove the registration
 ```
 
-The server reconstructs `XDG_RUNTIME_DIR`, `SWAYSOCK`, and `WAYLAND_DISPLAY` from
-`/run/user/<uid>` when launched with a sanitized environment. `screen_info`,
-`--self-test`, and `--doctor` report binary availability, including optional
-`edge-tts`, `piper`, and `tesseract`.
+The dependency check covers what this server uses — `python3`, `swaymsg`, `grim`,
+`wtype`, `wl-copy`, `wl-paste`, plus `codex` for the registration helpers — and
+reports nothing about the recording stack, which it does not touch.
 
 ## Error Model
 
