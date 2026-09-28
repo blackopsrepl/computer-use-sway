@@ -89,10 +89,11 @@ def handle_message(message: dict[str, Any]) -> dict[str, Any] | None:
                     "content": [{"type": "text", "text": f"unknown tool: {name}"}],
                 },
             }
+        started = time.monotonic()
         try:
-            started = time.monotonic()
             content = TOOLS[name](arguments)
             RECORDINGS.record_event(name, arguments, started, True)
+            append_event(name, arguments, started, True)
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -100,6 +101,7 @@ def handle_message(message: dict[str, Any]) -> dict[str, Any] | None:
             }
         except ToolError as exc:
             RECORDINGS.record_event(name, arguments, started, False)
+            append_event(name, arguments, started, False)
             return {
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -110,6 +112,7 @@ def handle_message(message: dict[str, Any]) -> dict[str, Any] | None:
             }
         except Exception as exc:
             RECORDINGS.record_event(name, arguments, started, False)
+            append_event(name, arguments, started, False)
             eprint(f"unexpected tool error in {name}: {exc}")
             return {
                 "jsonrpc": "2.0",
@@ -139,6 +142,7 @@ def run_mcp_server() -> int:
             signal.signal(sig, terminate)
         except (OSError, ValueError):
             pass
+    reset_stream()
     try:
         for line in sys.stdin:
             line = line.strip()
@@ -265,6 +269,7 @@ def self_test() -> int:
 
 
 def doctor() -> int:
+    stream = stream_path()
     report: dict[str, Any] = {
         "server": {
             "name": SERVER_NAME,
@@ -272,6 +277,7 @@ def doctor() -> int:
             "command": command_argv(),
             "module_path": __file__,
         },
+        "timeline_stream": str(stream) if stream is not None else None,
         "environment": {
             "WAYLAND_DISPLAY": os.environ.get("WAYLAND_DISPLAY"),
             "SWAYSOCK": os.environ.get("SWAYSOCK"),
