@@ -1,25 +1,28 @@
+"""Publish this server's actions to the take timeline.
+
+Recording and narration live in a separate server (`seshat`). It cannot
+timestamp actions it does not perform, so this server publishes them: one JSON
+object per line, in the contract seshat's README documents.
+
+    {"at_monotonic": 12345.678, "tool": "click", "ok": true,
+     "payload": {"x": 640, "y": 360}, "source": "computer-use-sway"}
+
+``at_monotonic`` is CLOCK_MONOTONIC seconds, which is host-wide, so these
+timestamps are directly comparable with the recorder's own epoch: no handshake,
+no session id, no shared process.
+
+The emitter decides what is safe to publish. Only curated keys leave this
+server: typed text becomes a character count, clipboard content becomes a byte
+count, and neither ever reaches the file.
+"""
+
 from __future__ import annotations
 
 import json
 import os
-import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from . import recording
-
-
-TIMELINE_SUFFIX = ".timeline.json"
-
-# --- the published timeline stream -------------------------------------------
-# Recording and narration live in a separate server (seshat). It cannot
-# timestamp actions it does not perform, so this server publishes them: one JSON
-# object per line, in the contract documented in seshat's README.
-#
-# ``at_monotonic`` is CLOCK_MONOTONIC seconds, which is host-wide, so an
-# unrelated process's timestamps are directly comparable with the recorder's own
-# epoch. No handshake, no session id, no shared process.
 
 STREAM_SUFFIX = ".jsonl"
 STREAM_ROOT_DIRECTORY = "seshat"
@@ -58,13 +61,8 @@ TIMELINE_PAYLOAD_KEYS: dict[str, tuple[str, ...]] = {
 }
 
 
-def recording_relative_ms(epoch_monotonic: float, at_monotonic: float) -> float:
-    """Milliseconds from the recording epoch to ``at_monotonic``, never negative."""
-    return round(max(at_monotonic - epoch_monotonic, 0.0) * 1000.0, 3)
-
-
 def timeline_payload(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Curated, non-sensitive summary of one tool call for the recording timeline."""
+    """Curated, non-sensitive summary of one tool call for the take timeline."""
     payload: dict[str, Any] = {}
     for key in TIMELINE_PAYLOAD_KEYS.get(name, ()):
         value = arguments.get(key)
@@ -141,35 +139,3 @@ def append_event(name: str, arguments: dict[str, Any], at_monotonic: float, ok: 
             os.close(fd)
     except OSError:
         pass
-
-
-def timeline_document(job: recording.RecordingJob) -> dict[str, Any]:
-    end = job.ended_monotonic if job.ended_monotonic is not None else time.monotonic()
-    return {
-        "id": job.id,
-        "format": job.fmt,
-        "output": job.output,
-        "region": job.region,
-        "started_utc": job.started_utc,
-        "capture_seconds": round(max(end - job.started_monotonic, 0.0), 3),
-        "event_count": len(job.events),
-        "events": [dict(event) for event in job.events],
-    }
-
-
-def write_timeline_sidecar(job: recording.RecordingJob) -> Path | None:
-    from . import recording as _recording
-
-    if job.timeline_path is None:
-        return None
-    data = json.dumps(timeline_document(job), indent=2, sort_keys=True).encode("utf-8")
-    fd = os.open(
-        job.timeline_path,
-        os.O_CREAT | os.O_TRUNC | os.O_WRONLY,
-        _recording.RECORDING_FILE_MODE,
-    )
-    try:
-        os.write(fd, data)
-    finally:
-        os.close(fd)
-    return job.timeline_path

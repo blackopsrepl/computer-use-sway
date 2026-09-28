@@ -13,7 +13,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from computer_use_sway import core, server
 
-from support import single_output
+
+def single_output(name: str = "DP-1", width: int = 1920, height: int = 1080) -> list[dict]:
+    return [
+        {
+            "name": name,
+            "active": True,
+            "rect": {"x": 0, "y": 0, "width": width, "height": height},
+        }
+    ]
 
 
 class ScreenInfoTests(unittest.TestCase):
@@ -34,7 +42,25 @@ class ScreenInfoTests(unittest.TestCase):
         self.assertEqual(payload["server"]["name"], "computer-use-sway")
         self.assertEqual(payload["server"]["version"], server.SERVER_VERSION)
         self.assertEqual(payload["bounds"], {"x": 0, "y": 0, "width": 1920, "height": 1080})
-        self.assertIn("edge-tts", payload["binaries"])
+        self.assertIn("grim", payload["binaries"])
+
+    def test_narration_binaries_are_no_longer_reported(self) -> None:
+        """This server does not narrate; its dependency report must not claim it does."""
+        with patch.object(core, "require_binaries"), patch.object(
+            server.desktop, "get_outputs", return_value=single_output()
+        ), patch.object(
+            server.desktop,
+            "active_output_rects",
+            return_value=[{"x": 0, "y": 0, "width": 1920, "height": 1080}],
+        ), patch.object(
+            server.desktop, "detect_seat", return_value="seat0"
+        ), patch.object(
+            server.desktop, "get_focused_window", return_value=None
+        ):
+            payload = json.loads(server.tool_screen_info({})[0]["text"])
+
+        for name in ("edge-tts", "piper", "wf-recorder", "ffmpeg", "ffprobe", "tesseract"):
+            self.assertNotIn(name, payload["binaries"])
 
 
 class ScreenshotTests(unittest.TestCase):

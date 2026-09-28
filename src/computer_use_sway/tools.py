@@ -8,32 +8,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import core, desktop, manager, tts
+from . import core, desktop
 from .version import SERVER_NAME, SERVER_VERSION
-
-
-def tool_recording_start(arguments: dict[str, Any]) -> list[dict[str, str]]:
-    return core.json_text(manager.RECORDINGS.start(arguments))
-
-
-def tool_recording_status(arguments: dict[str, Any]) -> list[dict[str, str]]:
-    return core.json_text(manager.RECORDINGS.status(arguments))
-
-
-def tool_recording_stop(_: dict[str, Any]) -> list[dict[str, str]]:
-    return core.json_text(manager.RECORDINGS.stop())
-
-
-def tool_recording_timeline(arguments: dict[str, Any]) -> list[dict[str, str]]:
-    return core.json_text(manager.RECORDINGS.timeline(arguments))
-
-
-def tool_recording_voiceover(arguments: dict[str, Any]) -> list[dict[str, str]]:
-    return core.json_text(manager.RECORDINGS.voiceover(arguments))
-
-
-def tool_recording_scenes(arguments: dict[str, Any]) -> list[dict[str, str]]:
-    return core.json_text(manager.RECORDINGS.scenes(arguments))
 
 
 def tool_screen_info(_: dict[str, Any]) -> list[dict[str, str]]:
@@ -68,12 +44,6 @@ def tool_screen_info(_: dict[str, Any]) -> list[dict[str, str]]:
                 "wtype",
                 "wl-copy",
                 "wl-paste",
-                "wf-recorder",
-                "ffmpeg",
-                "ffprobe",
-                tts.NARRATION_EDGE_COMMAND,
-                tts.NARRATION_PIPER_COMMAND,
-                "tesseract",
             )
         },
     }
@@ -362,10 +332,4 @@ TOOLS = {
     "key": tool_key,
     "clipboard_set": tool_clipboard_set,
     "clipboard_get": tool_clipboard_get,
-    "recording_start": tool_recording_start,
-    "recording_status": tool_recording_status,
-    "recording_stop": tool_recording_stop,
-    "recording_timeline": tool_recording_timeline,
-    "recording_voiceover": tool_recording_voiceover,
-    "recording_scenes": tool_recording_scenes,
 }

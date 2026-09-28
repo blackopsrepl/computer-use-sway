@@ -30,7 +30,9 @@ class ProtocolTests(unittest.TestCase):
         self.assertIsInstance(instructions, str)
         self.assertIn("never invent", instructions)
         self.assertIn("verify the visible result", instructions)
-        self.assertIn("recording_status", instructions)
+        self.assertIn("neither records nor narrates", instructions)
+        self.assertIn("seshat", instructions)
+        self.assertNotIn("recording_status", instructions)
 
     def test_tools_list_exposes_expected_tools(self) -> None:
         response = server.handle_message(
@@ -38,29 +40,38 @@ class ProtocolTests(unittest.TestCase):
         )
 
         names = {tool["name"] for tool in response["result"]["tools"]}
-        self.assertIn("screen_info", names)
-        self.assertIn("screenshot", names)
-        self.assertIn("clipboard_get", names)
-        self.assertIn("recording_start", names)
-        self.assertIn("recording_status", names)
-        self.assertIn("recording_stop", names)
+        self.assertEqual(
+            names,
+            {
+                "screen_info",
+                "screenshot",
+                "window_tree",
+                "focus_window",
+                "move_pointer",
+                "click",
+                "drag",
+                "scroll",
+                "type_text",
+                "key",
+                "clipboard_set",
+                "clipboard_get",
+            },
+        )
 
-    def test_recording_tools_are_silent_and_closed(self) -> None:
+    def test_the_recording_surface_is_gone(self) -> None:
+        """Recording and narration moved to seshat; this server must not offer them."""
         response = server.handle_message(
             {"jsonrpc": "2.0", "id": 4, "method": "tools/list"}
         )
 
         specs = {tool["name"]: tool for tool in response["result"]["tools"]}
-        for name in ("recording_start", "recording_status", "recording_stop"):
-            schema = specs[name]["inputSchema"]
-            self.assertIs(schema.get("additionalProperties"), False, name)
+        for name, schema in specs.items():
+            self.assertIs(schema["inputSchema"].get("additionalProperties"), False, name)
             self.assertNotIn("audio", json.dumps(schema), name)
-
-        start_schema = specs["recording_start"]["inputSchema"]
-        self.assertEqual(start_schema["properties"]["format"]["enum"], ["mp4", "webm", "gif"])
-        self.assertEqual(start_schema["properties"]["format"]["default"], "mp4")
-        region = start_schema["properties"]["region"]
-        self.assertEqual(region["required"], ["x", "y", "width", "height"])
+        self.assertFalse([name for name in specs if name.startswith("recording_")])
+        for module in ("manager", "narration", "recording", "scenes", "tts", "media"):
+            with self.assertRaises(AttributeError, msg=module):
+                getattr(server, module)
 
     def test_unknown_tool_returns_tool_error_result(self) -> None:
         response = server.handle_message(
