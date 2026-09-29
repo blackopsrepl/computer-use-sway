@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.3.0](https://github.com/blackopsrepl/computer-use-sway/compare/v0.2.6...v0.3.0) (2026-09-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **recording:** the recording_start, recording_status, recording_stop, recording_timeline, recording_voiceover and recording_scenes tools are gone from this server. Use seshat (mcp__seshat__recording_*) for recording and narration; this server now only publishes its actions to that timeline.
+
+* **recording:** drop the recording and narration surface 8ca3001
+
+
+### Features
+
+* **timeline:** publish this server's actions to the take timeline 4f2b38e
+
 ## [0.2.6](https://github.com/blackopsrepl/computer-use-sway/compare/v0.2.5...v0.2.6) (2026-09-25)
 
 
