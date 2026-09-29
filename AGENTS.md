@@ -6,37 +6,36 @@ Guidance for coding agents working in this repository.
 
 - `computer-use-sway` is a zero-runtime-dependency Python MCP stdio server that
   controls a Sway/Wayland desktop. `dependencies = []` in `pyproject.toml` is a
-  hard contract; any TTS, OCR, or scene tooling is optional and runtime-detected,
-  and a missing binary is a clear `ToolError`, never a hard import failure.
-- The server is deterministic and never embeds an LLM. It owns timestamping,
-  speech synthesis, alignment, and muxing; the calling agent writes the narration
-  prose. Narration is strictly opt-in and must be explicitly requested.
-- The silent recording contract is frozen: silent recordings carry no audio, the
-  artifact has exactly one video stream (H.264 MP4 by default, AV1 WebM, or GIF),
-  and `validate_recording_artifact` keeps rejecting unexpected audio.
-- Only one recording may be active per process; `RecordingManager` is the single
-  owner. `recording_start` must reject a second concurrent job.
-- GIF cannot carry audio; `recording_voiceover` refuses `format=gif`.
-- The `tools/call` dispatch layer timestamps every action/observation tool call
-  into the active recording timeline; keep that hook intact.
+  hard contract; a missing binary is a clear `ToolError`, never a hard import
+  failure.
+- Desktop control only. Recording, the take timeline, speech synthesis, captions
+  and muxing live in the separate `seshat` server
+  (<https://github.com/blackopsrepl/seshat>). Do not reintroduce them here: a
+  second implementation of that contract is the exact failure this split removes.
+- The server is deterministic, never embeds an LLM, and never generates narration
+  prose.
+- The `tools/call` dispatch layer publishes every dispatched action/observation
+  call to the take timeline stream a recorder reads; keep that hook intact. A
+  published event means a call was *dispatched* — never that the action had its
+  intended visible effect.
+- The stream is the only file this server writes, and its payloads are curated
+  here before they are written: typed text becomes a character count, clipboard
+  content becomes a byte count, and neither value ever reaches the file.
+- Publishing is a side channel: a missing runtime directory or any write error is
+  swallowed, because narration must never be able to break an action.
 
 ## Project Structure
 
 - `src/computer_use_sway/core.py`: tool errors, subprocess execution, session
   environment recovery, and strict parsing helpers.
 - `desktop.py`: Sway output, seat, tree, window, coordinate, and cursor helpers.
-- `media.py`: `ffprobe`-backed media probing.
-- `recording.py`: recording job model, path/argument construction, artifact
-  validation, and finalization.
-- `timeline.py`: recording-relative event timeline and sidecar.
-- `tts.py`: pluggable `edge-tts`/`piper` engines and audio parsing.
-- `narration.py`: narration contract, anchor resolution, scheduling, and muxing.
-- `subtitles.py`: styled ASS captions and the burn-in mux argv.
-- `scenes.py`: approximate scene-cut and OCR fallback anchors.
-- `manager.py`: the single recording lifecycle owner and `RECORDINGS`.
+- `timeline.py`: the published timeline stream — payload curation, stream path,
+  startup truncation, and `append_event`.
 - `tools.py` / `specs.py`: MCP tool wrappers and JSON schemas.
-- `server.py`: MCP protocol loop and CLI facade.
-- `tests/`: deterministic unit tests plus `support.py` helpers.
+- `server.py`: MCP protocol loop, the publishing `tools/call` dispatch, and the
+  CLI facade.
+- `version.py`: server name and version.
+- `tests/`: deterministic unit tests.
 
 ## Engineering Rules
 
@@ -64,8 +63,9 @@ That runs the unit tests, bytecode compilation, and the file-length check.
 
 Keep these synchronized with shipped behavior:
 
-- `README.md`: public overview, requirements, recording and narration workflows.
-- `WIREFRAME.md`: shipped MCP tool surface and runtime contract.
+- `README.md`: public overview, requirements, screenshots, and the pointer to
+  `seshat` for recording and narration.
+- `WIREFRAME.md`: shipped MCP tool surface, timeline publication, runtime files.
 - `docs/architecture.md`: layers, boundaries, and lifecycle.
 - `docs/codex.md`: Codex registration.
 - `skill/solverforge-computer-use/SKILL.md`: agent operating procedure.
