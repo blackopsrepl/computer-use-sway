@@ -16,7 +16,28 @@ const serverVersion = {
   },
 };
 
+// Tooling-only releases are real releases. `build` and `docs` are hidden types
+// in the conventional-commits preset, so a release that ships no behaviour would
+// otherwise publish an empty changelog section — and an empty section is
+// indistinguishable from a release that shipped nothing. Everything else keeps
+// the preset's default visibility. Kept identical to the seshat repository's
+// config: the two are one pipeline and should not diverge in how they report.
+const types = [
+  { type: "feat", section: "Features" },
+  { type: "fix", section: "Bug Fixes" },
+  { type: "perf", section: "Performance Improvements" },
+  { type: "revert", section: "Reverts" },
+  { type: "build", section: "Build System" },
+  { type: "docs", section: "Documentation" },
+  { type: "style", section: "Styles", hidden: true },
+  { type: "chore", section: "Miscellaneous Chores", hidden: true },
+  { type: "refactor", section: "Code Refactoring", hidden: true },
+  { type: "test", section: "Tests", hidden: true },
+  { type: "ci", section: "Continuous Integration", hidden: true },
+];
+
 module.exports = {
+  types,
   packageFiles: [pyproject],
   bumpFiles: [pyproject, serverVersion],
   tagPrefix: "v",
