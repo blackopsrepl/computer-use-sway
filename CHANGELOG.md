@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.3.1](https://github.com/blackopsrepl/computer-use-sway/compare/v0.3.0...v0.3.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **drag:** hold the button with a virtual pointer, not a cursor warp 0f01f4e
+
+
+### Build System
+
+* **release:** match seshat's changelog type visibility 12574cc
+
+
+### Documentation
+
+* **drag:** the virtual pointer requirement, on every surface d033e86
+
 ## [0.3.0](https://github.com/blackopsrepl/computer-use-sway/compare/v0.2.6...v0.3.0) (2026-09-29)
 
 
