@@ -16,6 +16,7 @@ from typing import Any
 
 from .core import *
 from .desktop import *
+from .pointer import *
 from .specs import *
 from .timeline import *
 from .tools import *
@@ -234,6 +235,15 @@ def self_test() -> int:
         },
         "binaries": dict(checks),
         "seat": seat,
+        # Dragging needs a virtual pointer, and this is the one dependency that
+        # is not a binary or an environment variable: without it `drag` cannot
+        # work, so the self-test reports it rather than letting a caller
+        # discover it mid-drag.
+        "virtual_pointer": {
+            "path": pointer.DEVICE_PATH,
+            "available": pointer.available(),
+            **({} if pointer.available() else {"remedy": pointer.DEVICE_HINT}),
+        },
         "outputs": [
             {
                 "name": output.get("name"),

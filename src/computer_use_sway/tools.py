@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import core, desktop
+from . import core, desktop, pointer
 from .version import SERVER_NAME, SERVER_VERSION
 
 
@@ -199,21 +199,22 @@ def tool_drag(arguments: dict[str, Any]) -> list[dict[str, str]]:
     if duration_ms < 0 or duration_ms > 10_000:
         raise core.ToolError("duration_ms must be between 0 and 10000")
 
-    sleep_s = duration_ms / 1000.0 / max(steps, 1)
-    desktop.sway_cursor("set", str(start_x), str(start_y))
+    # The drag is walked by a virtual pointer, not by Sway's cursor warp: the
+    # warp reports success for every step and delivers no motion between the
+    # press and the release, so a drag built on it is a press and a release at
+    # the same point. See `pointer.py`.
     try:
-        desktop.sway_cursor("press", button)
-        for step in range(1, steps + 1):
-            x = round(start_x + (end_x - start_x) * step / steps)
-            y = round(start_y + (end_y - start_y) * step / steps)
-            desktop.sway_cursor("set", str(x), str(y))
-            if sleep_s:
-                time.sleep(sleep_s)
-    finally:
-        try:
-            desktop.sway_cursor("release", button)
-        except core.ToolError as exc:
-            core.eprint(f"drag release failed: {exc}")
+        pointer.drag(
+            (start_x, start_y),
+            (end_x, end_y),
+            steps=steps,
+            duration_ms=duration_ms,
+            sway_cursor=desktop.sway_cursor,
+        )
+    except core.ToolError:
+        raise
+    except OSError as exc:
+        raise core.ToolError(f"drag failed: {exc}") from exc
     return core.json_text(
         {
             "dragged": True,

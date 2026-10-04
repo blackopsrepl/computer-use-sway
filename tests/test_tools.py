@@ -116,25 +116,63 @@ class ScreenshotTests(unittest.TestCase):
 
 
 class DragTests(unittest.TestCase):
-    def test_release_failure_is_logged_and_drag_still_reported(self) -> None:
-        def sway_cursor(action: str, *_args: str) -> None:
-            if action == "release":
-                raise core.ToolError("release failed")
+    """`tool_drag` validates its arguments and hands the movement to the virtual
+    pointer. It used to drive the whole path through Sway's cursor warp, which
+    is why the drag never worked; the release is no longer a Sway command at
+    all, so the old test's premise — a failing `release` must be logged — is
+    gone with it.
+    """
 
+    def test_delegates_movement_to_the_virtual_pointer(self) -> None:
+        calls: list[tuple] = []
         with patch.object(
             server.desktop, "validate_coordinates", side_effect=lambda x, y: (int(x), int(y))
-        ), patch.object(
-            server.desktop, "sway_cursor", side_effect=sway_cursor
-        ), patch.object(core, "eprint") as eprint:
+        ), patch.object(server.pointer, "drag", side_effect=lambda *a, **k: calls.append((a, k))):
             payload = json.loads(
                 server.tool_drag(
-                    {"from": {"x": 1, "y": 2}, "to": {"x": 3, "y": 4}}
+                    {
+                        "from": {"x": 1, "y": 2},
+                        "to": {"x": 30, "y": 40},
+                        "steps": 5,
+                        "duration_ms": 200,
+                    }
                 )[0]["text"]
             )
 
         self.assertTrue(payload["dragged"])
-        eprint.assert_called_once()
-        self.assertIn("release failed", eprint.call_args[0][0])
+        self.assertEqual(payload["steps"], 5)
+        (args, kwargs), = calls
+        self.assertEqual(args[0], (1, 2))
+        self.assertEqual(args[1], (30, 40))
+        self.assertEqual(kwargs["steps"], 5)
+        self.assertEqual(kwargs["duration_ms"], 200)
+        # The virtual pointer needs the absolute warp passed in rather than
+        # importing the desktop layer itself.
+        self.assertIs(kwargs["sway_cursor"], server.desktop.sway_cursor)
+
+    def test_a_pointer_failure_surfaces_rather_than_reporting_a_drag(self) -> None:
+        """Answering `dragged: true` for a drag that did not happen is the exact
+        failure this whole change exists to remove."""
+        with patch.object(
+            server.desktop, "validate_coordinates", side_effect=lambda x, y: (int(x), int(y))
+        ), patch.object(
+            server.pointer, "drag", side_effect=core.ToolError("no virtual pointer")
+        ):
+            with self.assertRaises(server.ToolError) as caught:
+                server.tool_drag({"from": {"x": 1, "y": 2}, "to": {"x": 3, "y": 4}})
+
+        self.assertIn("no virtual pointer", str(caught.exception))
+
+    def test_steps_and_duration_are_bounded(self) -> None:
+        with patch.object(
+            server.desktop, "validate_coordinates", side_effect=lambda x, y: (int(x), int(y))
+        ):
+            with self.assertRaises(server.ToolError):
+                server.tool_drag({"from": {"x": 1, "y": 2}, "to": {"x": 3, "y": 4}, "steps": 0})
+            with self.assertRaises(server.ToolError):
+                server.tool_drag(
+                    {"from": {"x": 1, "y": 2}, "to": {"x": 3, "y": 4}, "duration_ms": 99_999}
+                )
 
 
 if __name__ == "__main__":
