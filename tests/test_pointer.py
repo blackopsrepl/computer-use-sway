@@ -126,15 +126,56 @@ class DragTests(unittest.TestCase):
             pointer.drag((100, 100), (200, 40), steps=4, duration_ms=0,
                          sway_cursor=lambda *parts: warps.append(parts))
 
-        self.assertEqual(events[0], "press")
-        self.assertEqual(events[-1], "release")
-        moves = [e for e in events if e.startswith("move")]
-        self.assertEqual(len(moves), 4)
+        # The press must come before any step of the path, and the release after
+        # all of them: that is what makes it a drag rather than a click.
+        first_press = events.index("press")
+        release = events.index("release")
+        steps = [i for i, e in enumerate(events) if e.startswith("move")]
+        self.assertTrue(all(i < first_press for i in steps[:2]))
+        self.assertTrue(all(first_press < i < release for i in steps[2:]))
+
         # The whole offset, delivered in steps of the requested size.
-        self.assertEqual(sum(int(m.split()[1].split(",")[0]) for m in moves), 100)
-        self.assertEqual(sum(int(m.split()[1].split(",")[1]) for m in moves), -60)
+        path = [e for e in events[first_press:release] if e.startswith("move")]
+        self.assertEqual(len(path), 4)
+        self.assertEqual(sum(int(m.split()[1].split(",")[0]) for m in path), 100)
+        self.assertEqual(sum(int(m.split()[1].split(",")[1]) for m in path), -60)
         # Absolute placement happens once, before anything moves.
         self.assertEqual(warps, [("set", "100", "100")])
+
+    def test_the_device_moves_before_it_presses(self) -> None:
+        """A press is delivered where the compositor thinks the pointer is, and
+        a new device has no position, so a press sent first goes nowhere."""
+        events: list[str] = []
+
+        class Fake(pointer.VirtualPointer):
+            def __init__(self, name: str = "x") -> None:
+                self._closed = False
+
+            def press(self, button: int = pointer.BTN_LEFT) -> None:
+                events.append("press")
+
+            def release(self, button: int = pointer.BTN_LEFT) -> None:
+                events.append("release")
+
+            def move(self, dx: int, dy: int, pause_s: float = 0.0) -> None:
+                events.append(f"move {dx},{dy}")
+
+            def close(self) -> None:
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc: object) -> None:
+                self.close()
+
+        with patch.object(pointer, "VirtualPointer", Fake):
+            pointer.drag((10, 10), (20, 20), steps=2, duration_ms=0,
+                         sway_cursor=lambda *parts: None)
+
+        self.assertEqual(events[0], "move 1,0")
+        self.assertEqual(events[1], "move -1,0")
+        self.assertEqual(events[2], "press")
 
 
 if __name__ == "__main__":

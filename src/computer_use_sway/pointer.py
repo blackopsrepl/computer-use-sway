@@ -174,6 +174,15 @@ def drag(
     time.sleep(0.08)  # the warp is asynchronous; let it land
 
     with VirtualPointer() as pointer:
+        # Establish the device's position before pressing. A press is delivered
+        # to whatever surface the compositor believes the pointer is over, and a
+        # freshly created device has no position yet — so a press sent as the
+        # device's very first event goes nowhere, and the drag then looks like
+        # motion that never grabbed anything. Two one-pixel reports put the
+        # pointer over the target without moving it.
+        pointer.move(1, 0, pause_s=0)
+        pointer.move(-1, 0, pause_s=0)
+        time.sleep(0.05)
         pointer.press()
         time.sleep(0.05)
         pause_s = min(0.02, duration_ms / 1000.0 / max(steps, 1))
