@@ -57,6 +57,15 @@ Twelve tools: five observation, seven input.
 `screenshot` is the only tool that returns image content; `save_path` exists for
 hosts whose per-request image budget makes repeated screenshots unusable.
 
+### Transport per tool
+
+Almost every tool is a Sway IPC command. `drag` is the exception: Sway's cursor
+warp accepts a drag's every step and delivers no motion while the button is
+held, so `drag` sends the path through a virtual pointer on `/dev/uinput`
+instead (absolute placement still comes from a warp). That makes `/dev/uinput`
+the one non-command requirement, and its absence disables `drag` alone — see
+README for the udev rule.
+
 ## Timeline Publication
 
 This server does not record. It publishes what it dispatches, so that a recorder

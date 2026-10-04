@@ -65,6 +65,31 @@ Python 3.10 or newer, standard library only: `dependencies = []` is a hard
 contract. The recording stack (`wf-recorder`, `ffmpeg`, `ffprobe`, TTS engines,
 `tesseract`) is not a dependency of this server any more — it belongs to `seshat`.
 
+### Virtual pointer (required by `drag`)
+
+Everything except `drag` works over Sway's IPC. `drag` cannot: `swaymsg seat
+<seat> cursor set x y` accepts every step of a drag and delivers none of the
+motion between a press and its release, so the gesture arrives as a press and a
+release at one point. `drag` therefore walks the path with a virtual pointer
+emitted through `/dev/uinput`, which the standard library can drive directly.
+
+That device node is `root:root` mode `0600` by default, so `drag` needs one
+either way:
+
+- a udev rule, which is what a normal install wants:
+
+  ```
+  # /etc/udev/rules.d/99-uinput.rules
+  KERNEL=="uinput", MODE="0666"
+  ```
+
+  reload with `sudo udevadm control --reload-rules && sudo udevadm trigger`
+
+- or membership in a group that owns the node.
+
+Without it, `drag` fails with a message naming the rule, and every other tool
+keeps working. `computer-use-sway --self-test` reports the node's state.
+
 ## Install
 
 From a checkout:

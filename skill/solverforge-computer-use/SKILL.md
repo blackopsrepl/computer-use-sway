@@ -27,7 +27,12 @@ Observation:
 Input:
 
 - `focus_window`: focus by container id, app id, class, or title.
-- `move_pointer`, `click`, `drag`, `scroll`: pointer control through the seat cursor.
+- `move_pointer`, `click`, `scroll`: pointer control through the seat cursor.
+- `drag`: hold the button and move, which the seat cursor cannot do — the path
+  goes through a virtual pointer on `/dev/uinput`. If `/dev/uinput` is not
+  writable for this user, `drag` fails and says so; every other tool still
+  works. Do not fall back to clicking a start and an end point: that is not a
+  drag, and an application that needs one will not react to it.
 - `type_text`, `key`: text and key chords through `wtype`.
 - `clipboard_set`: write text to the clipboard.
 

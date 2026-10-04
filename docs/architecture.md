@@ -10,6 +10,9 @@
   content, or `save_path` writes them to a `0600` file and returns text-only
   metadata so long runs do not exhaust a host's per-request image budget.
 - Input: pointer actions use Sway seat cursor commands; text and key events use `wtype`.
+  `drag` is the one exception: a warp cannot move the pointer under a held
+  button, so its path is emitted by a virtual pointer on `/dev/uinput` after the
+  warp places the pointer exactly (`pointer.py`).
 - Clipboard: text-only set/get through `wl-copy` and `wl-paste`.
 - Timeline: every dispatched call is appended to
   `$XDG_RUNTIME_DIR/seshat/streams/computer-use-sway.jsonl` with an `at_monotonic`
@@ -41,10 +44,12 @@ are documented in that repository's README and WIREFRAME.
   strict parsing helpers. Imports nothing from the package.
 - `desktop.py`: Sway output, seat, tree, window, coordinate and cursor helpers.
   Depends on `core`.
+- `pointer.py`: the virtual pointer that makes a real drag possible, plus the
+  path walk and the requirement check for `/dev/uinput`. Depends on `core`.
 - `timeline.py`: the published timeline stream — the curated payload rules, the
   stream path, startup truncation, and `append_event`. Depends on the standard
   library only, so publishing can never fail into a tool call.
-- `tools.py`: the twelve MCP tool wrappers. Depends on `core`, `desktop`.
+- `tools.py`: the twelve MCP tool wrappers. Depends on `core`, `desktop`, `pointer`.
 - `specs.py`: JSON schemas for that surface. Depends on `core`.
 - `server.py`: MCP protocol loop, the `tools/call` dispatch that publishes every
   call, and the CLI facade (`--self-test`, `--doctor`, Codex registration).
