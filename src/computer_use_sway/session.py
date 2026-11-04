@@ -69,6 +69,7 @@ class Session:
         self._sandbox: Any = None
         self._saved_env: dict[str, str | None] | None = None
         self.user_seat: str | None = None
+        self.sandbox_factory: Any = None  # tests: a Sandbox class/partial with size and scale
 
     # -- transports ----------------------------------------------------------
     def ipc(self) -> swayipc.Ipc:
@@ -115,7 +116,7 @@ class Session:
     def _enter_sandbox(self) -> None:
         from . import sandbox
 
-        box = sandbox.Sandbox()
+        box = (self.sandbox_factory or sandbox.Sandbox)()
         box.start()
         self._sandbox = box
         self._saved_env = {key: os.environ.get(key) for key in ENV_KEYS}
