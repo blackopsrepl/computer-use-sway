@@ -238,6 +238,28 @@ class SandboxTests(unittest.TestCase):
             self.assertTrue(box.root.exists())
 
 
+class SigtermTests(unittest.TestCase):
+    def test_sigterm_becomes_system_exit_unless_someone_else_handles_it(self) -> None:
+        import signal
+
+        previous = signal.getsignal(signal.SIGTERM)
+        try:
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            sandbox.exit_on_sigterm()
+            with self.assertRaises(SystemExit) as raised:
+                os.kill(os.getpid(), signal.SIGTERM)  # the handler runs before kill returns
+            self.assertEqual(raised.exception.code, 128 + signal.SIGTERM)
+
+            def mine(*_args: object) -> None:
+                pass
+
+            signal.signal(signal.SIGTERM, mine)
+            sandbox.exit_on_sigterm()
+            self.assertIs(signal.getsignal(signal.SIGTERM), mine)
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+
+
 class AnchorTests(unittest.TestCase):
     def test_running_follows_the_lock(self) -> None:
         import fcntl

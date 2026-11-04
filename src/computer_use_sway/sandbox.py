@@ -13,6 +13,7 @@ import os
 import shutil
 import signal
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -151,6 +152,20 @@ def render_config(root: Path, width: int, height: int, scale: float) -> str:
     )
 
 
+def _raise_exit(signum: int, _frame: Any) -> None:
+    raise SystemExit(128 + signum)
+
+
+def exit_on_sigterm() -> None:
+    """Turn the default SIGTERM into SystemExit, so `with Sandbox()` still
+    tears down: a terminated bench run left its root and processes behind.
+    A handler someone else installed is kept; signals reach only the main
+    thread."""
+    if threading.current_thread() is threading.main_thread() \
+            and signal.getsignal(signal.SIGTERM) is signal.SIG_DFL:
+        signal.signal(signal.SIGTERM, _raise_exit)
+
+
 class Sandbox:
     def __init__(self, width: int = 1920, height: int = 1080, scale: float = 1.0,
                  prefix: Path | None = None) -> None:
@@ -190,6 +205,7 @@ class Sandbox:
         for binary in ("sway", "dbus-daemon"):
             if shutil.which(binary) is None:
                 raise core.ToolError(f"sandbox mode needs `{binary}` on PATH")
+        exit_on_sigterm()
         self.prefix.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.root.mkdir(mode=0o700)
         self._created = True
