@@ -151,7 +151,9 @@ def _settle(con_id: int, limit_s: float = 2.0, stable_s: float = 0.4) -> dict[st
     return win
 
 
-def _a11y_ready(session: Any, win: dict[str, Any], limit_s: float = 3.0) -> bool:
+def _a11y_ready(session: Any, win: dict[str, Any], limit_s: float = 5.0) -> bool:
+    """True once the window's accessible frame exists with a populated tree and
+    no page still loading: an app appears on the bus before its widgets do."""
     client = session.a11y_or_none()
     if client is None or not win.get("pid"):
         return False
@@ -162,10 +164,18 @@ def _a11y_ready(session: Any, win: dict[str, Any], limit_s: float = 3.0) -> bool
     deadline = time.monotonic() + limit_s
     while time.monotonic() < deadline:
         try:
-            if client.app_for_window(int(win["pid"])) is not None:
-                return True
+            app = client.app_for_window(int(win["pid"]))
+            title = (desktop.window_by_id(int(win["id"])) or win).get("name")
+            frame = client.frame_for_window(app, title) if app is not None else None
+            if frame is not None:
+                nodes = client.walk(frame, max_nodes=400)
+                # A browser's frame is populated before its page: wait until
+                # no document is still loading ("busy"), or observe sees chrome only.
+                loading = any(n.role.startswith("document") and "busy" in n.states for n in nodes)
+                if len(nodes) > 3 and not loading:
+                    return True
         except core.ToolError:
-            return False
+            pass
         time.sleep(0.2)
     return False
 
