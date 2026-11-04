@@ -39,6 +39,10 @@ ACTION_SYNONYMS = ("press", "click", "activate", "Click", "Press")
 EVENTS = ("object:text-changed", "object:state-changed", "object:property-change",
           "object:children-changed", "window:activate")
 CALL_TIMEOUT = 2.0
+# An app that timed out is skipped for this long: one blocked in a nested main
+# loop (gtk_dialog_run started from a DoAction handler) answers nothing until
+# the loop returns, and paying CALL_TIMEOUT per node turned observe into 15 s.
+STALL_S = 3.0
 WALK_BUDGET_S = 3.0
 INVALID = -(2 ** 31)
 
@@ -80,6 +84,7 @@ class Client:
     def __init__(self, session_bus_address: str | None = None, session_bus: Any = None, a11y_bus: Any = None) -> None:
         self._restore: dict[str, bool] | None = None
         self.truncated = False
+        self.stalled: dict[str, float] = {}
         if a11y_bus is not None:
             self.session, self.bus = session_bus, a11y_bus
             return
@@ -140,11 +145,26 @@ class Client:
                 bus.close()
 
     # -- primitives ------------------------------------------------------------
+    def _guard(self, dest: str, fn: Any) -> Any:
+        until = self.stalled.get(dest)
+        if until is not None:
+            if time.monotonic() < until:
+                raise core.ToolError(f"{dest} is not answering accessibility calls (busy in a modal loop?)",
+                                     code="a11y_stalled")
+            del self.stalled[dest]
+        try:
+            return fn()
+        except dbus.DBusError as exc:
+            if exc.name == "org.freedesktop.DBus.Error.Timeout" and dest != REGISTRY:
+                self.stalled[dest] = time.monotonic() + STALL_S
+            raise
+
     def call(self, ref: Ref, iface: str, member: str, sig: str = "", *args: Any) -> tuple:
-        return self.bus.call(ref[0], ref[1], IFACE.get(iface, iface), member, sig, *args, timeout=CALL_TIMEOUT)
+        return self._guard(ref[0], lambda: self.bus.call(ref[0], ref[1], IFACE.get(iface, iface), member, sig,
+                                                         *args, timeout=CALL_TIMEOUT))
 
     def prop(self, ref: Ref, iface: str, name: str) -> Any:
-        return self.bus.get_property(ref[0], ref[1], IFACE.get(iface, iface), name)
+        return self._guard(ref[0], lambda: self.bus.get_property(ref[0], ref[1], IFACE.get(iface, iface), name))
 
     def apps(self) -> list[Ref]:
         return [tuple(x) for x in self.call((REGISTRY, ROOT), "acc", "GetChildren")[0]]  # type: ignore[misc]

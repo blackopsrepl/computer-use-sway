@@ -173,6 +173,28 @@ class AtspiTests(unittest.TestCase):
         self.assertEqual(client.actions(("a", "/b")), ["press"])
         self.assertEqual(client.resolve_action(("a", "/b"), "click"), 0)
 
+    def test_a_stalled_app_is_skipped_until_the_window_passes(self) -> None:
+        from computer_use_sway import dbus
+
+        calls: list[str] = []
+
+        class Bus:
+            def call(self, dest, *args, **kw):
+                calls.append(dest)
+                raise dbus.DBusError("org.freedesktop.DBus.Error.Timeout", dest)
+
+        client = atspi.Client(session_bus=None, a11y_bus=Bus())
+        with self.assertRaises(dbus.DBusError):
+            client.call((":1.9", "/x"), "acc", "GetChildren")
+        with self.assertRaises(core.ToolError) as caught:
+            client.call((":1.9", "/y"), "acc", "GetChildren")
+        self.assertEqual(caught.exception.code, "a11y_stalled")
+        self.assertEqual(calls, [":1.9"])
+        client.stalled[":1.9"] = 0.0  # window over: tried again
+        with self.assertRaises(dbus.DBusError):
+            client.call((":1.9", "/x"), "acc", "GetChildren")
+        self.assertEqual(calls, [":1.9", ":1.9"])
+
 
 if __name__ == "__main__":
     unittest.main()

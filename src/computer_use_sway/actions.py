@@ -184,6 +184,10 @@ def ladder(session: Any, action: str, element: Any, profile: toolkits.Profile, d
     # pointer not allowed) still has a meaning: the element's press action.
     if action == "click" and element is not None and element.source == "a11y" and element.actions:
         rungs.append("semantic")
+    if (profile.blocking_actions and action in ("press", "click", "toggle") and "agent" in rungs
+            and element is not None and "offscreen" not in (element.states or [])):
+        rungs.remove("agent")
+        rungs.insert(0, "agent")
     return rungs
 
 

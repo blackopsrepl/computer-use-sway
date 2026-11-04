@@ -17,10 +17,14 @@ class Profile:
     paste_follows_seat: bool | None  # [C2]
     launch_flags: tuple[str, ...]  # added by launch for a11y [A9]
     a11y_by_bus_status: bool  # honours org.a11y.Status [A9]
+    # DoAction runs the widget's handler inside the D-Bus call; a handler that
+    # starts a nested main loop (gtk_dialog_run) blocks the app's a11y until
+    # the loop returns, so a pointer press is preferred [A12]
+    blocking_actions: bool = False
 
 
 PROFILES = {
-    "gtk3": Profile("gtk3", True, "reliable", False, True, (), True),
+    "gtk3": Profile("gtk3", True, "reliable", False, True, (), True, blocking_actions=True),
     "gtk4": Profile("gtk4", True, "reliable", False, False, (), True),
     "qt": Profile("qt", True, "reliable", False, False, (), True),
     "gecko": Profile("gecko", True, "lies", False, True, (), True),
@@ -30,7 +34,9 @@ PROFILES = {
     "unknown": Profile("unknown", None, "absent", False, None, (), False),
 }
 
-TERMINALS = {"kitty", "foot", "footclient", "alacritty", "org.wezfurlong.wezterm", "com.mitchellh.ghostty"}
+SINGLE_SEAT_TERMINALS = {"kitty", "org.wezfurlong.wezterm"}
+SEAT_TERMINALS = {"foot", "footclient", "alacritty", "com.mitchellh.ghostty"}
+TERMINALS = SINGLE_SEAT_TERMINALS | SEAT_TERMINALS
 ELECTRON_APPS = {"md.obsidian.obsidian", "obsidian", "discord", "com.nousresearch.hermes", "code", "slack",
                  "code-oss", "vscodium", "signal", "element"}
 CHROMIUM_HINTS = ("chrom", "electron", "brave", "vivaldi", "msedge")
