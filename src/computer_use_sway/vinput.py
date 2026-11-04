@@ -150,16 +150,19 @@ class VirtualKeyboard:
         return [sym for sym in self.slots if sym is not None]
 
     def _assign(self, wanted: list[str], settle: bool = True) -> None:
-        """Bind keysyms to slots (evicting least recently used ones) and upload."""
+        """Bind keysyms to slots of their pool (evicting least recently used
+        ones) and upload."""
         changed = False
         for sym in wanted:
             if sym in self.slots:
                 continue
-            if None in self.slots:
-                index = self.slots.index(None)
+            pool = keymap.TEXT_POOL if keymap.is_text_keysym(sym) else keymap.KEY_POOL
+            free = [i for i in pool if self.slots[i] is None]
+            if free:
+                index = free[0]
             else:
                 protect = self.pinned | set(wanted)
-                victims = [i for i, s in enumerate(self.slots) if s not in protect]
+                victims = [i for i in pool if self.slots[i] not in protect]
                 if not victims:
                     raise core.ToolError("too many distinct special characters at once for the keymap")
                 index = min(victims, key=lambda i: self._used.get(self.slots[i] or "", 0.0))
@@ -246,9 +249,9 @@ class VirtualKeyboard:
                 sym = keymap.keysym_for_char(ch)
                 if sym not in keymap.NAMED and sym not in special:
                     special.append(sym)
-        free = len(keymap.SLOTS) - len(self.pinned)
-        if special:
-            self._assign(special[:free])
+        text_special = [sym for sym in special if keymap.is_text_keysym(sym)]
+        if text_special:
+            self._assign(text_special[:len(keymap.TEXT_POOL)])
         typed = 0
         for ch in text:
             if ch in keymap.US:

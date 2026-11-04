@@ -3,10 +3,17 @@
 The keymap is the real evdev keycode set with a US layout, so ASCII goes out
 on the physical key a real keyboard would use (with a real Shift press), and
 apps that look at key codes behave normally. Any other keysym (non-ASCII
-text, F13-F24, the agent's private binding keys) is bound to one of twelve
-slots on the F13-F24 keys. The slots must sit below xkb keycode 256:
-Chromium and Electron silently drop key events with higher codes, which lost
-every non-ASCII character typed into them (measured).
+text, F13-F24, the agent's private binding keys) is bound to a slot, a
+keycode rebound on demand. All slots sit below xkb keycode 256: Chromium and
+Electron silently drop key events with higher codes, which lost every
+non-ASCII character typed into them (FINDINGS I3).
+
+Two pools. Characters go on six keys that Chromium maps to a DOM code (it
+drops keys without one) and Ghostty has no key for (it sends an F-key's
+escape sequence instead of the character on F13-F24): IntlBackslash, IntlYen,
+NumpadComma, NumpadParenLeft/Right and Open (FINDINGS I6). Keysyms that are
+keys (the agent's binding keys, F13-F24 themselves, media keys) use the
+twelve F13-F24 slots.
 """
 
 from __future__ import annotations
@@ -42,7 +49,14 @@ MOD_KEYS = {"shift": 42, "ctrl": 29, "alt": 56, "logo": 125}
 # with zwp_virtual_keyboard_v1.modifiers around every modified key.
 MOD_MASK = {"shift": 1, "ctrl": 4, "alt": 8, "logo": 64}
 # (evdev code, xkb key name) of the slots; xkb code = evdev + 8.
-SLOTS = [(183 + i, f"FK{13 + i}") for i in range(12)]
+KEY_SLOTS = [(183 + i, f"FK{13 + i}") for i in range(12)]
+# (evdev code, xkb key name): KEY_102ND, KEY_YEN, KEY_KPCOMMA, KEY_KPLEFTPAREN,
+# KEY_KPRIGHTPAREN, KEY_OPEN. Unassigned evdev codes (84, 195-199) were
+# tried first: Chromium dropped every character on them.
+TEXT_SLOTS = [(86, "LSGT"), (124, "AE13"), (121, "I129"), (179, "I187"), (180, "I188"), (134, "OPEN")]
+SLOTS = KEY_SLOTS + TEXT_SLOTS
+TEXT_POOL = range(len(KEY_SLOTS), len(SLOTS))
+KEY_POOL = range(len(KEY_SLOTS))
 FOCUS_KEY = "XF86Macro27"
 LAUNCH_KEY = "XF86Macro29"
 AGENT_KEYSYMS = (FOCUS_KEY, LAUNCH_KEY)
@@ -87,6 +101,11 @@ def normalize_key(name: str) -> str:
     if lowered.startswith("f") and lowered[1:].isdigit():
         return "F" + lowered[1:]
     return name
+
+
+def is_text_keysym(sym: str) -> bool:
+    """A character (Unicode keysym), as opposed to a key such as F13 or XF86Macro27."""
+    return sym.startswith("U") and len(sym) >= 5 and all(c in "0123456789ABCDEF" for c in sym[1:])
 
 
 def build_keymap(slots: list[str | None]) -> bytes:

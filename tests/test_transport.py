@@ -98,6 +98,17 @@ class SlotTests(unittest.TestCase):
         self.assertEqual(code, keymap.SLOTS[kb.slots.index("U00E9")][0])
         self.assertEqual(kb.code_for("F13"), keymap.SLOTS[kb.slots.index("F13")][0])
 
+    def test_characters_use_unassigned_codes_and_keys_use_f_keys(self) -> None:
+        # Ghostty reads F13-F24 as function keys and sends their escape
+        # sequences, and Chromium drops keys it has no DOM code for [I6].
+        kb = self.keyboard()
+        text_codes = {code for code, _ in keymap.TEXT_SLOTS}
+        self.assertIn(kb.code_for("U00F6"), text_codes)
+        self.assertIn(kb.code_for("U20AC"), text_codes)
+        self.assertNotIn(kb.code_for("F13"), text_codes)
+        self.assertEqual(sorted(text_codes), [86, 121, 124, 134, 179, 180])
+        self.assertIn("key <LSGT> {[ U00F6 ]};", keymap.build_keymap(kb.slots).decode())
+
 
 class WireTests(unittest.TestCase):
     def test_string_padding(self) -> None:
