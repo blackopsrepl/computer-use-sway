@@ -135,6 +135,9 @@ def foreground(session: Any, action: str, element: Any, con_id: int | None, poin
             except core.ToolError:
                 pass
         time.sleep(0.05)
+        from .actions import fresh_point
+
+        point = fresh_point(session, element, point)
         base = verify.take_baseline(session, element, con_id, want_pixels=do_verify)
         if needs_keyboard(action) and action != "key" and element is not None:
             if action == "set_text":

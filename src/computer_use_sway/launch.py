@@ -109,11 +109,23 @@ def _wait_new_window(session: Any, before: set[int], t0: float, timeout_s: float
     return None
 
 
-def _settle_title(con_id: int, limit_s: float = 1.5) -> dict[str, Any] | None:
+def _settle(con_id: int, limit_s: float = 2.0, stable_s: float = 0.4) -> dict[str, Any] | None:
+    """Wait for a title and a geometry that held still for stable_s.
+
+    Right after mapping, sway reports the window without its title bar
+    offset (y=0) for up to ~200 ms; geometry read then is wrong by the title
+    bar height (measured).
+    """
     deadline = time.monotonic() + limit_s
     win = desktop.window_by_id(con_id)
-    while win is not None and not win.get("name") and time.monotonic() < deadline:
-        time.sleep(0.1)
+    last, since = None, time.monotonic()
+    while win is not None and time.monotonic() < deadline:
+        key = (win.get("name"), tuple(sorted((win.get("rect") or {}).items())), tuple(sorted(win["content"].items())))
+        if key != last:
+            last, since = key, time.monotonic()
+        elif win.get("name") and time.monotonic() - since >= stable_s:
+            break
+        time.sleep(0.03)
         win = desktop.window_by_id(con_id)
     return win
 
@@ -158,6 +170,8 @@ def launch(session: Any, argv: Any, cwd: Any = None, env: Any = None, timeout_ms
         subprocess.Popen(argv, cwd=cwd, env=child_env, start_new_session=True, stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         win = _wait_new_window(session, before, t0, timeout_ms / 1000.0, None)
+        if win is not None:
+            win = _settle(int(win["id"])) or win
         disturbed = True
     else:
         agent = session.agent()
@@ -176,8 +190,8 @@ def launch(session: Any, argv: Any, cwd: Any = None, env: Any = None, timeout_ms
                 win = desktop.window_by_id(int(win["id"])) or win
                 win["moved_from"] = moved_from
             if win is not None:
-                win = _settle_title(int(win["id"])) or win
                 agent.focus(int(win["id"]))
+                win = _settle(int(win["id"])) or win
         finally:
             write_launcher(install.PLACEHOLDER)
             disturbed = sentinel.restore(snap)

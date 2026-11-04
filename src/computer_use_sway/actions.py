@@ -43,6 +43,19 @@ def resolve_target(session: Any, target: Any) -> tuple[Any, int | None, tuple[in
     raise core.ToolError("target must be {ref}, {query} or {x, y}")
 
 
+def fresh_point(session: Any, element: Any, point: Any) -> Any:
+    """Re-read an a11y element's bounds right before pointer input: focusing
+    can move or resize the window after observe (or a just-mapped window may
+    still be settling)."""
+    if element is None or element.source != "a11y":
+        return point
+    bounds = scene.rebound(session, element)
+    if bounds is None:
+        return point
+    element.bounds = bounds
+    return geometry.center(bounds)
+
+
 def resolve_to(session: Any, to: Any) -> tuple[int, int]:
     _element, _con, point = resolve_target(session, to)
     assert point is not None
@@ -97,6 +110,7 @@ def run_rung(session: Any, rung: str, action: str, element: Any, con_id: int | N
         try:
             if con_id is not None:
                 agent.focus(con_id)
+            point = fresh_point(session, element, point)
             base = verify.take_baseline(session, element, con_id, want_pixels=do_verify)
             try:
                 device_form(agent.devices, action, element, point, d)
@@ -116,6 +130,7 @@ def run_rung(session: Any, rung: str, action: str, element: Any, con_id: int | N
         sess_devices = session.user_devices()
         if con_id is not None:
             desktop.ipc().command(f"[con_id={int(con_id)}] focus")
+        point = fresh_point(session, element, point)
         base = verify.take_baseline(session, element, con_id, want_pixels=do_verify)
         device_form(sess_devices, action, element, point, d)
         out = verify.verdict(session, base, expect) if do_verify else verify.disabled()
