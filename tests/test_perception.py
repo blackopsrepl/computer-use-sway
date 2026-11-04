@@ -21,6 +21,13 @@ class OcrTests(unittest.TestCase):
         self.assertEqual(len(kept), 1)
         self.assertEqual(kept[0].conf, 90)
 
+    def test_dedupe_resolves_different_readings_of_one_spot(self) -> None:
+        words = [ocr.Word("Hi", (10, 10, 30, 20), 95, "raw"), ocr.Word("Hit", (10, 10, 36, 20), 80, "gray"),
+                 ocr.Word("Hit", (11, 10, 35, 20), 75, "mid"), ocr.Word("Go", (100, 10, 30, 20), 90, "raw")]
+        kept = ocr.dedupe(words)
+        self.assertEqual([w.text for w in kept], ["Hit", "Go"])  # two variants agree on "Hit"
+        self.assertEqual([line.text for line in ocr.lines(kept)], ["Hit", "Go"])
+
     def test_lines_and_span_box(self) -> None:
         words = [ocr.Word(t, (x, 10, w, 20), 90, "raw")
                  for t, x, w in (("File", 0, 40), ("Save", 50, 40), ("as", 95, 20), ("Export", 125, 60))]

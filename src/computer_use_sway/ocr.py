@@ -137,16 +137,33 @@ def recognize(ppm: bytes, psm: str = "11") -> list[Word]:
     return dedupe(words)
 
 
+def _overlap(a: Box, b: Box) -> float:
+    """Intersection over the smaller box's area."""
+    ix = max(0, min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]))
+    iy = max(0, min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]))
+    smaller = min(a[2] * a[3], b[2] * b[3])
+    return (ix * iy) / smaller if smaller > 0 else 0.0
+
+
 def dedupe(words: list[Word]) -> list[Word]:
-    """Same text whose center falls inside a kept box is one word; keep the best."""
-    kept: list[Word] = []
+    """One word per place. Variants that read the same spot are alternatives,
+    not neighbours: keep the reading most variants agree on (then the most
+    confident). Keeping both turned "Hit" into the line "Hi Hit" (measured)."""
+    clusters: list[list[Word]] = []
     for word in sorted(words, key=lambda w: -w.conf):
-        x, y, w, h = word.box_px
-        cx, cy = x + w / 2, y + h / 2
-        if any(k.text == word.text and k.box_px[0] <= cx <= k.box_px[0] + k.box_px[2]
-               and k.box_px[1] <= cy <= k.box_px[1] + k.box_px[3] for k in kept):
-            continue
-        kept.append(word)
+        for cluster in clusters:
+            if _overlap(cluster[0].box_px, word.box_px) >= 0.5:
+                cluster.append(word)
+                break
+        else:
+            clusters.append([word])
+    kept: list[Word] = []
+    for cluster in clusters:
+        support: dict[str, set[str]] = {}
+        for word in cluster:
+            support.setdefault(word.text, set()).add(word.variant)
+        best = max(cluster, key=lambda w: (len(support[w.text]), w.conf))
+        kept.append(best)
     return sorted(kept, key=lambda w: (w.box_px[1], w.box_px[0]))
 
 
