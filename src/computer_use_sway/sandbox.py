@@ -56,6 +56,84 @@ def mounts_under(root: Path) -> list[str]:
     return found
 
 
+def _references(pid: str, root: str, marker: bytes) -> bool:
+    try:
+        with open(f"/proc/{pid}/environ", "rb") as handle:
+            if marker in handle.read():
+                return True
+    except OSError:
+        pass
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            if root.encode() in handle.read():
+                return True
+    except OSError:
+        pass
+    try:
+        if os.readlink(f"/proc/{pid}/cwd").startswith(root):
+            return True
+        for fd in os.listdir(f"/proc/{pid}/fd"):
+            if os.readlink(f"/proc/{pid}/fd/{fd}").startswith(root):
+                return True
+    except OSError:
+        pass
+    return False
+
+
+def processes_in(root: Path) -> list[int]:
+    """Our processes tied to this sandbox root by environment, command line,
+    working directory or an open file. Apps exec'd by the nested sway are not
+    our descendants, and Chromium overwrites its environ block for its
+    process title, so no single signal finds them all."""
+    marker = f"XDG_RUNTIME_DIR={root}\0".encode()
+    text = str(root)
+    uid = os.getuid()
+    found = []
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit() or int(entry) == os.getpid():
+            continue
+        try:
+            if os.stat(f"/proc/{entry}").st_uid != uid:
+                continue
+        except OSError:
+            continue
+        if _references(entry, text, marker):
+            found.append(int(entry))
+    return found
+
+
+def descendants(roots: list[int]) -> list[int]:
+    """Every live descendant of `roots` (by ppid), captured before any kill so
+    re-parenting to init cannot hide them."""
+    children: dict[int, list[int]] = {}
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/stat", encoding="utf-8") as handle:
+                ppid = int(handle.read().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            continue
+        children.setdefault(ppid, []).append(int(entry))
+    found: list[int] = []
+    stack = list(roots)
+    while stack:
+        pid = stack.pop()
+        for child in children.get(pid, []):
+            if child not in found:
+                found.append(child)
+                stack.append(child)
+    return found
+
+
+def alive(pid: int) -> bool:
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as handle:
+            return handle.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return False
+
+
 def find_atspi(name: str) -> str | None:
     for base in AT_SPI_DIRS:
         path = os.path.join(base, name)
@@ -184,6 +262,15 @@ class Sandbox:
             pass
 
     def stop(self) -> None:
+        tree = descendants([proc.pid for _name, proc in self.procs])
+        for pid in tree:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline and any(alive(pid) for pid in tree):
+            time.sleep(0.05)
         for _name, proc in reversed(self.procs):
             self._signal_group(proc, signal.SIGTERM)
         for _name, proc in reversed(self.procs):
@@ -194,6 +281,8 @@ class Sandbox:
                 proc.wait(timeout=5)
         self.procs.clear()
         self.env = {}
+        if self._created:
+            self._kill_stragglers()
         for point in mounts_under(self.root):
             for tool in ("fusermount3", "fusermount"):
                 if shutil.which(tool):
@@ -203,8 +292,29 @@ class Sandbox:
         if mounts_under(self.root):
             core.eprint(f"sandbox: leaving {self.root} in place, something is still mounted under it")
         elif self._safe_root():
-            shutil.rmtree(self.root)
+            for _attempt in range(5):
+                shutil.rmtree(self.root, ignore_errors=True)
+                if not self.root.exists():
+                    break
+                self._kill_stragglers()
+                time.sleep(0.2)
+            if self.root.exists():
+                core.eprint(f"sandbox: could not fully remove {self.root}")
         self._created = False
+
+    def _kill_stragglers(self) -> None:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            pids = processes_in(self.root)
+            if not pids:
+                return
+            for pid in pids:
+                try:
+                    os.kill(pid, sig)
+                except (ProcessLookupError, PermissionError):
+                    pass
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline and processes_in(self.root):
+                time.sleep(0.1)
 
     def __enter__(self) -> "Sandbox":
         self.start()
