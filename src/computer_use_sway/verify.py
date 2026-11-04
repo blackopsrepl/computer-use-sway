@@ -47,19 +47,19 @@ class Baseline:
     con_id: int | None
     title: str | None
     region: dict[str, int] | None
-    region_hash: str | None
+    frame: bytes | None
     a11y: tuple[str, str] | None
 
 
 def take_baseline(session: Any, element: Any, con_id: int | None, want_pixels: bool = True) -> Baseline:
     win = desktop.window_by_id(con_id) if con_id is not None else None
-    region = digest = None
+    region = shot = None
     if want_pixels and win is not None and win.get("visible"):
         try:
             region = capture.window_region(win)
-            digest = capture.region_hash(region)
+            shot = capture.frame(region)
         except core.ToolError:
-            region = digest = None
+            region = shot = None
     client = session.a11y_or_none()
     if client is not None and element is not None and getattr(element, "a11y", None):
         try:
@@ -67,7 +67,7 @@ def take_baseline(session: Any, element: Any, con_id: int | None, want_pixels: b
             client.pump(0)
         except core.ToolError:
             pass
-    return Baseline(time.monotonic(), con_id, (win or {}).get("name"), region, digest,
+    return Baseline(time.monotonic(), con_id, (win or {}).get("name"), region, shot,
                     getattr(element, "a11y", None) if element is not None else None)
 
 
@@ -158,14 +158,14 @@ def verdict(session: Any, base: Baseline, expect: Expectation | None = None,
             break
     if events:
         return _result("changed", events, base, text_failed)
-    if base.region is not None and base.region_hash is not None:
+    if base.region is not None and base.frame is not None:
         try:
-            digest, _stable = capture.settle(base.region, 60, max(120, settle_ms // 2))
+            after, _stable = capture.settle(base.region, 60, max(120, settle_ms // 2))
         except core.ToolError:
-            digest = None
-        if digest is not None and digest != base.region_hash:
+            after = None
+        if after is not None and capture.changed(base.frame, after):
             return _result("changed", ["pixels"], base, text_failed)
-        if digest is not None:
+        if after is not None:
             return _result("no_change", ["pixels:unchanged"] + (["readback:text:mismatch"] if text_failed else []),
                            base, text_failed)
     return _result("unverifiable", ["no readback, events or pixels available"], base, text_failed)

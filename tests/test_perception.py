@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from computer_use_sway import atspi, core, ocr, query, refs, toolkits
+from computer_use_sway import atspi, capture, core, ocr, query, refs, toolkits
 
 
 class OcrTests(unittest.TestCase):
@@ -33,6 +33,31 @@ class OcrTests(unittest.TestCase):
         tsv = "h\n" + "\t".join(["5", "1", "1", "1", "1", "1", "3", "4", "5", "6", "91", "Go"]) + "\n" \
               + "\t".join(["5", "1", "1", "1", "1", "2", "3", "4", "5", "6", "20", "xx"])
         self.assertEqual([w.text for w in ocr.parse_tsv(tsv, "raw")], ["Go"])
+
+
+def ppm(width: int, height: int, dark: set[tuple[int, int]]) -> bytes:
+    px = bytearray(b"\xff" * width * height * 3)
+    for x, y in dark:
+        px[(y * width + x) * 3:(y * width + x) * 3 + 3] = b"\0\0\0"
+    return b"P6 %d %d 255\n" % (width, height) + bytes(px)
+
+
+class ChangeTests(unittest.TestCase):
+    def test_a_blinking_caret_is_noise(self) -> None:
+        caret = {(10, y) for y in range(2, 22)} | {(11, y) for y in range(2, 22)}
+        self.assertFalse(capture.changed(ppm(40, 30, set()), ppm(40, 30, caret)))
+
+    def test_a_glyph_or_a_repaint_is_a_change(self) -> None:
+        glyph = {(x, y) for x in range(5, 13) for y in range(5, 15)}
+        self.assertTrue(capture.changed(ppm(40, 30, set()), ppm(40, 30, glyph)))
+        wide_line = {(x, 3) for x in range(0, 30)}
+        self.assertTrue(capture.changed(ppm(40, 30, set()), ppm(40, 30, wide_line)))
+        self.assertTrue(capture.changed(ppm(40, 30, set()), ppm(41, 30, set())))
+
+    def test_crop(self) -> None:
+        image = ppm(4, 4, {(1, 1)})
+        self.assertEqual(capture.crop(image, (1, 1, 1, 1)), b"P6 1 1 255\n\0\0\0")
+        self.assertEqual(capture.crop(image, (3, 3, 5, 5)), b"P6 1 1 255\n\xff\xff\xff")
 
 
 class QueryTests(unittest.TestCase):
@@ -109,14 +134,15 @@ class RefTests(unittest.TestCase):
         with self.assertRaises(core.ToolError):
             store.get(ref)
 
-    def test_ocr_refs_go_stale_when_pixels_change(self) -> None:
+    def test_ocr_refs_go_stale_when_their_pixels_change(self) -> None:
         store = refs.RefStore()
         snap = store.new_snapshot()
-        el = refs.Element(ref="", source="ocr", con_id=1, role="text", name="Save", region={"x": 0}, region_hash="a")
+        el = refs.Element(ref="", source="ocr", con_id=1, role="text", name="Save", region={"x": 0},
+                          crop_px=(0, 0, 4, 4), pixels=b"P6 1 1 255\n\0\0\0")
         ref = store.add(snap, el)
-        store.validate(ref, None, lambda e: None, lambda r: "a")
+        store.validate(ref, None, lambda e: None, lambda e: True)
         with self.assertRaises(core.ToolError):
-            store.validate(ref, None, lambda e: None, lambda r: "b")
+            store.validate(ref, None, lambda e: None, lambda e: False)
 
 
 class AtspiTests(unittest.TestCase):

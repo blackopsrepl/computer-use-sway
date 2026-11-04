@@ -3,7 +3,7 @@
 A ref names an element in one observe snapshot. Before any action uses it,
 it is re-validated against the live screen: an a11y element must still exist
 with the same role and name and be showing (its bounds are re-read, since
-the window may have moved); an OCR element's window pixels must be unchanged.
+the window may have moved); an OCR element's own pixels must be unchanged.
 """
 
 from __future__ import annotations
@@ -37,7 +37,8 @@ class Element:
     csd: tuple[int, int] = (0, 0)
     device_px: bool = False
     region: dict[str, int] | None = None
-    region_hash: str | None = None
+    crop_px: tuple[int, int, int, int] | None = None  # OCR: the element's box in the 2x window capture
+    pixels: bytes | None = None  # OCR: that crop at observe time
     app_id: str | None = None
     profile: str = "unknown"
     ifaces: list[str] = field(default_factory=list)
@@ -74,7 +75,7 @@ class RefStore:
         return bucket[ref]
 
     def validate(self, ref: str, client: Any, rebound: Callable[[Element], Box | None],
-                 region_hash: Callable[[dict[str, int]], str]) -> Element:
+                 still_same: Callable[[Element], bool]) -> Element:
         element = self.get(ref)
         stale = core.ToolError(f"stale_ref {ref}: element changed or disappeared; call observe again",
                                code="stale_ref")
@@ -92,13 +93,13 @@ class RefStore:
             if bounds is not None:
                 element.bounds = bounds
             return element
-        if element.region is None or element.region_hash is None:
+        if element.region is None or element.pixels is None:
             raise stale
         try:
-            current = region_hash(element.region)
+            same = still_same(element)
         except core.ToolError as exc:
             raise stale from exc
-        if current != element.region_hash:
+        if not same:
             raise stale
         return element
 

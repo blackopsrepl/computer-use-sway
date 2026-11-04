@@ -146,16 +146,18 @@ def ocr_elements(ws: WindowScene, max_elements: int) -> None:
     try:
         region = capture.window_region(ws.win)
         image = capture.ppm2x(region)
-        digest = capture.region_hash(region)
     except core.ToolError as exc:
         ws.notes.append(f"ocr: {exc}")
         return
     ws.ocr_used = True
     for line in ocr.lines(ocr.recognize(image))[:max_elements]:
         bounds = geometry.ocr_to_layout((region["x"], region["y"]), line.box_px)
+        x, y, w, h = line.box_px
+        box = (x - 4, y - 4, w + 8, h + 8)
         ws.elements.append(refs.Element(
             ref="", source="ocr", con_id=int(ws.win["id"]), role="text", name=line.text, bounds=bounds,
-            region=region, region_hash=digest, app_id=ws.win.get("app_id"), profile=ws.profile.name,
+            region=region, crop_px=box, pixels=capture.crop(image, box), app_id=ws.win.get("app_id"),
+            profile=ws.profile.name,
         ))
 
 
@@ -296,7 +298,17 @@ def rebound(session: Any, element: refs.Element) -> geometry.Box | None:
     return geometry.a11y_to_layout(geo, ext, element.device_px)
 
 
+def ocr_unchanged(element: refs.Element) -> bool:
+    """An OCR element is the same while its own box shows the same pixels in
+    the same window region (a moved or resized window means re-observe)."""
+    win = desktop.window_by_id(element.con_id)
+    if win is None or element.region is None or element.crop_px is None or element.pixels is None:
+        return False
+    if capture.window_region(win) != element.region:
+        return False
+    now = capture.crop(capture.ppm2x(element.region), element.crop_px)
+    return not capture.changed(element.pixels, now)
+
+
 def validate(session: Any, ref: str) -> refs.Element:
-    return refs.store_for(session).validate(
-        ref, session.a11y_or_none(), lambda e: rebound(session, e), capture.region_hash
-    )
+    return refs.store_for(session).validate(ref, session.a11y_or_none(), lambda e: rebound(session, e), ocr_unchanged)

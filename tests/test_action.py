@@ -99,15 +99,19 @@ class FakeSession:
         return None
 
 
+FRAME = b"P6 20 20 255\n" + b"\xff" * 1200
+CHANGED = b"P6 20 20 255\n" + b"\0" * 1200
+
+
 class VerdictTests(unittest.TestCase):
     def base(self, region: bool) -> verify.Baseline:
         return verify.Baseline(0.0, 1, "t", {"x": 0, "y": 0, "width": 1, "height": 1} if region else None,
-                               "h0" if region else None, None)
+                               FRAME if region else None, None)
 
     def test_pixels_changed_and_unchanged(self) -> None:
-        with patch.object(verify.capture, "settle", return_value=("h1", True)):
+        with patch.object(verify.capture, "settle", return_value=(CHANGED, True)):
             self.assertEqual(verify.verdict(FakeSession(), self.base(True))["effect"], "changed")
-        with patch.object(verify.capture, "settle", return_value=("h0", True)):
+        with patch.object(verify.capture, "settle", return_value=(FRAME, True)):
             self.assertEqual(verify.verdict(FakeSession(), self.base(True))["effect"], "no_change")
 
     def test_nothing_observable_is_unverifiable(self) -> None:
@@ -117,7 +121,7 @@ class VerdictTests(unittest.TestCase):
         sess = FakeSession()
         events = [(1.0, "window", {"change": "focus", "container": {"id": 1}})]
         sess.log = type("L", (), {"since": staticmethod(lambda t, name=None: events)})
-        with patch.object(verify.capture, "settle", return_value=("h0", True)):
+        with patch.object(verify.capture, "settle", return_value=(FRAME, True)):
             self.assertEqual(verify.verdict(sess, self.base(True))["effect"], "no_change")
         events.append((1.1, "window", {"change": "title", "container": {"id": 1}}))
         self.assertEqual(verify.verdict(sess, self.base(False))["evidence"], ["sway:title"])

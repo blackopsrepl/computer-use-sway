@@ -113,7 +113,7 @@ def wait_for(session: Any, condition: Any, timeout_ms: Any = 10000) -> core.Resu
             raise core.ToolError("for_ms must be between 60 and 10000")
         region = capture.window_region(win)
         while True:
-            _digest, ok = capture.settle(region, for_ms, max(for_ms * 2, 120))
+            _frame, ok = capture.settle(region, for_ms, max(for_ms * 2, 120))
             if ok or time.monotonic() >= deadline:
                 break
         detail = "stable" if ok else "still changing"
