@@ -69,14 +69,23 @@ def parse(arg: Any) -> Query:
     return q
 
 
+def canonical_role(role: str) -> str:
+    """One name per role family: toolkits and at-spi versions spell the same
+    role differently (GTK3 dialog buttons are "button", others "push button")."""
+    role = role.lower()
+    if role in ROLE_SYNONYMS:
+        return role
+    for family, members in ROLE_SYNONYMS.items():
+        if role in members:
+            return family
+    return role
+
+
 def role_matches(q_role: str | None, node_role: str) -> bool:
     if q_role is None:
         return True
-    wanted = q_role.lower()
-    actual = node_role.lower()
-    if wanted == actual:
-        return True
-    return actual in ROLE_SYNONYMS.get(wanted, set())
+    wanted, actual = q_role.lower(), node_role.lower()
+    return wanted == actual or canonical_role(wanted) == canonical_role(actual)
 
 
 def string_matches(pattern: str | None, value: str | None, match: str) -> bool:

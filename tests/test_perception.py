@@ -72,6 +72,9 @@ class QueryTests(unittest.TestCase):
         self.assertTrue(query.role_matches("button", "push button"))
         self.assertTrue(query.role_matches("entry", "text"))
         self.assertFalse(query.role_matches("button", "label"))
+        # either spelling finds the other (GTK3 dialog buttons report "button")
+        self.assertTrue(query.role_matches("push button", "button"))
+        self.assertTrue(query.role_matches("menu item", "check menu item"))
 
     def test_parse_validates(self) -> None:
         with self.assertRaises(core.ToolError):
