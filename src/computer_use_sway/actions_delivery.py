@@ -48,6 +48,11 @@ def semantic(client: Any, action: str, element: Any, d: Delivery) -> None:
         assert d.value is not None
         client.set_value(ref, d.value)
     elif action == "select":
+        try:
+            if client.select_in_parent(ref):
+                return
+        except core.ToolError:
+            pass
         index = client.resolve_action(ref, "select")
         if index is None:
             index = client.resolve_action(ref, "activate")
@@ -63,6 +68,9 @@ def _point(point: Any) -> tuple[int, int]:
 
 
 def device_form(devices: Any, action: str, element: Any, point: Any, d: Delivery) -> None:
+    if element is not None and "offscreen" in (element.states or []) and action in POINTER_ACTIONS + ("set_text",):
+        raise core.ToolError(f"{element.ref} is scrolled out of view; scroll it into view, then observe again",
+                             code="offscreen")
     pointer, keyboard = devices.pointer, devices.keyboard
     if action in ("press", "activate", "toggle", "focus", "click", "select"):
         pointer.click(*_point(point))

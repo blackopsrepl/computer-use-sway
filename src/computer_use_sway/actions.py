@@ -22,7 +22,25 @@ ACTIONS = ("press", "activate", "toggle", "focus", "set_text", "type", "key", "c
 DELIVERIES = ("auto", "semantic", "agent", "foreground")
 
 
-def resolve_target(session: Any, target: Any) -> tuple[Any, int | None, tuple[int, int] | None]:
+TEXT_ACTIONS = ("set_text", "type")
+ACTIONABLE = ("press", "activate", "toggle", "select", "click", "double_click", "right_click", "set_value")
+
+
+def rank_for(action: str | None, found: list[Any]) -> list[Any]:
+    """Order query matches by fitness for the action: a label named "Name"
+    must not win over the entry named "Name" for set_text. Stable otherwise."""
+    def fit(e: Any) -> int:
+        if action in TEXT_ACTIONS:
+            return 0 if ("editable" in e.states or "org.a11y.atspi.EditableText" in e.ifaces) else 1
+        if action in ACTIONABLE:
+            return 0 if e.actions else 1
+        return 0
+
+    return sorted(found, key=lambda e: (fit(e), "offscreen" in e.states))
+
+
+def resolve_target(session: Any, target: Any, action: str | None = None
+                   ) -> tuple[Any, int | None, tuple[int, int] | None]:
     if not isinstance(target, dict):
         raise core.ToolError("target must be {ref}, {query} or {x, y}")
     if "ref" in target:
@@ -31,7 +49,7 @@ def resolve_target(session: Any, target: Any) -> tuple[Any, int | None, tuple[in
     if "query" in target:
         q = query.parse(target["query"])
         result = scene.collect(session, "visible", None, q, 500, session.options.get("ocr", "auto"))
-        found = scene.matching(result, q)
+        found = rank_for(action, scene.matching(result, q))
         if len(found) <= q.nth:
             raise core.ToolError(f"no element matches the query (found {len(found)})", code="no_match")
         element = found[q.nth]
@@ -150,6 +168,11 @@ def ladder(session: Any, action: str, element: Any, profile: toolkits.Profile, d
         if delivery == "agent" and session.mode == "user":
             return ["user"]
         return [delivery]
+    if element is not None and "popup" in (element.states or []):
+        if semantic_ok or (element.actions and action in ("click", "press", "activate")):
+            return ["semantic"]
+        raise core.ToolError(f"{element.ref} is in a popup menu, whose position no one reports; only its "
+                             "semantic actions can reach it", code="popup_no_pointer")
     rungs = ["semantic"] if semantic_ok else []
     if session.mode == "user":
         return rungs + ["user"]
@@ -174,7 +197,7 @@ def act(session: Any, target: Any, action: str, d: Delivery, delivery: str = "au
     started = time.monotonic()
     if session.mode in ("seat", "sandbox"):
         session.agent()
-    element, con_id, point = resolve_target(session, target)
+    element, con_id, point = resolve_target(session, target, action)
     if action == "drag_to":
         d.to_point = resolve_to(session, d.to)
     profile = profile_for(session, element, con_id)

@@ -24,11 +24,22 @@ def _selector_match(win: dict[str, Any], selector: dict[str, Any]) -> bool:
     raise core.ToolError("window selector needs con_id, app_id, class, or title")
 
 
+OCR_EVERY_S = 2.0
+OCR_FIRST_S = 0.5
+
+
 def _element(session: Any, cond: dict[str, Any], deadline: float) -> tuple[bool, str]:
     q = query.parse(cond["element"])
     state = cond.get("state", "present")
+    # Accessible trees answer in milliseconds, OCR in seconds: poll the trees,
+    # and let OCR in at most every OCR_EVERY_S and on the last pass.
+    last_ocr = time.monotonic() - OCR_EVERY_S + OCR_FIRST_S
     while True:
-        result = scene.collect(session, "visible", None, q, 500, "never" if state == "absent" else "auto")
+        now = time.monotonic()
+        use_ocr = state != "absent" and (now - last_ocr >= OCR_EVERY_S or now + POLL_S >= deadline)
+        if use_ocr:
+            last_ocr = now
+        result = scene.collect(session, "visible", None, q, 500, "auto" if use_ocr else "never")
         found = scene.matching(result, q)
         if state == "present" and found:
             return True, f"found {found[0].ref}"

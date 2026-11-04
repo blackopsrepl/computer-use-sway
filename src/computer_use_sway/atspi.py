@@ -207,13 +207,17 @@ class Client:
                 node = self.node(child)
             except core.ToolError:
                 continue
-            if node.role not in ("frame", "window", "dialog"):
-                continue
             score = 0
             if title and node.name == title:
                 score += 4
             elif title and node.name and (node.name in title or title in node.name):
                 score += 2
+            if node.role in ("frame", "window", "dialog", "alert", "file chooser"):
+                score += 1
+            elif score == 0:
+                # A Qt widgets top-level without a window role is a "filler":
+                # accepted only when its name matches the window title.
+                continue
             if "active" in node.states:
                 score += 2
             if "showing" in node.states:
@@ -237,7 +241,9 @@ class Client:
             except core.ToolError:
                 continue  # stale objects disappear mid-walk
             out.append(node)
-            if prune_hidden and depth > 1 and "showing" not in node.states:
+            # Scrolled-out list rows are "visible" but not "showing"; only
+            # subtrees that are neither (hidden widgets) are skipped.
+            if prune_hidden and depth > 1 and not ({"showing", "visible"} & node.states):
                 continue
             try:
                 kids = self.children(ref)
@@ -283,6 +289,19 @@ class Client:
         if index is None:
             raise core.ToolError(f"element has no {name_or_index!r} action", code="no_action")
         return bool(self.call(ref, "action", "DoAction", "i", index)[0])
+
+    def select_in_parent(self, ref: Ref) -> bool:
+        """Selection.SelectChild on the parent: the standard way to select a
+        list row or tab, scrolled out of view or not. False when the parent
+        has no Selection interface."""
+        parent = self.prop(ref, "acc", "Parent")
+        if not parent or not isinstance(parent, (tuple, list)) or len(parent) != 2:
+            return False
+        parent = (str(parent[0]), str(parent[1]))
+        if IFACE["sel"] not in set(self.call(parent, "acc", "GetInterfaces")[0]):
+            return False
+        index = int(self.call(ref, "acc", "GetIndexInParent")[0])
+        return index >= 0 and bool(self.call(parent, "sel", "SelectChild", "i", index)[0])
 
     def grab_focus(self, ref: Ref) -> bool:
         return bool(self.call(ref, "comp", "GrabFocus")[0])

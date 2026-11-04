@@ -17,6 +17,7 @@ SCOPES = ("agent", "focused", "visible", "window")
 LANDMARKS = {"frame", "window", "dialog", "alert", "menu", "menu bar", "page tab list", "tool bar"}
 TEXTUAL = {"label", "heading", "static", "paragraph", "text", "link", "list item", "table cell",
            "tree item", "page tab", "menu item", "status bar", "notification", "caption"}
+SHOWN_TEXT = ("label", "static", "heading", "paragraph", "caption", "status bar")
 STATE_SUBSET = ("focused", "checked", "selected", "pressed", "expanded", "editable", "indeterminate")
 LINE_LIMIT = 120
 OCR_MIN_ELEMENTS = 3
@@ -61,10 +62,12 @@ def windows_in_scope(session: Any, scope: str, selector: dict[str, Any] | None) 
 
 
 def keep(node: Any) -> bool:
-    if node.extents is None or node.extents[2] <= 0 or node.extents[3] <= 0:
+    if "showing" in node.states:
+        if node.extents is None or node.extents[2] <= 0 or node.extents[3] <= 0:
+            return False
+    elif "visible" not in node.states:
         return False
-    if "showing" not in node.states:
-        return False
+    # Not showing but visible: scrolled out of view (GTK3 gives it no extents).
     if node.role in LANDMARKS and node.depth > 0:
         return True
     if "org.a11y.atspi.Action" in node.ifaces or "editable" in node.states or "focused" in node.states:
@@ -103,21 +106,26 @@ def a11y_elements(session: Any, client: Any, ws: WindowScene, outputs: list[dict
     nodes = client.walk(frame, max_nodes=4000)
     if not nodes:
         return False
-    ws.a11y = len(nodes) > 3
+    # A renderer with accessibility off exposes the frame and a couple of bare
+    # containers; one actionable node is enough for a real tree (a Qt widgets
+    # window with a single button has two nodes).
+    ws.a11y = len(nodes) > 3 or any("org.a11y.atspi.Action" in n.ifaces for n in nodes[1:])
     frame_ext = nodes[0].extents or (0, 0, win["content"]["width"], win["content"]["height"])
     child_boxes = [n.extents for n in nodes if n.parent == frame and n.extents]
     csd = geometry.csd_origin(frame_ext, child_boxes, (win["content"]["width"], win["content"]["height"]))
     geo = window_geo(win, frame_ext, csd, outputs)
     kept = []
+    by_ref = {n.ref: n for n in nodes}
     for node in nodes[1:]:
         if not keep(node):
             continue
-        bounds = geometry.a11y_to_layout(geo, node.extents, ws.profile.device_pixel_extents)
-        if not intersects(bounds, win["content"]):
-            continue
-        kept.append((node, bounds))
-    kept.sort(key=lambda item: (item[1][1], item[1][0]))
-    for node, bounds in kept[:max_elements]:
+        bounds = (geometry.a11y_to_layout(geo, node.extents, ws.profile.device_pixel_extents)
+                  if node.extents else (0, 0, 0, 0))
+        # Scrolled out of view but alive: kept (semantic actions still work),
+        # marked offscreen, listed only when a query asks for it.
+        kept.append((node, bounds, "showing" not in node.states or not intersects(bounds, win["content"])))
+    kept.sort(key=lambda item: (item[2], item[1][1], item[1][0]))
+    for node, bounds, offscreen in kept[:max_elements]:
         actions = client.actions(node.ref) if "org.a11y.atspi.Action" in node.ifaces else []
         preview = None
         if "org.a11y.atspi.Text" in node.ifaces and ("editable" in node.states or node.role in ("entry", "text")):
@@ -125,15 +133,38 @@ def a11y_elements(session: Any, client: Any, ws: WindowScene, outputs: list[dict
                 preview = client.text(node.ref, 0, 81)
             except core.ToolError:
                 preview = None
+        elif "org.a11y.atspi.Text" in node.ifaces and node.role in SHOWN_TEXT:
+            # A label whose accessible name differs from what it displays
+            # ("Transfer code" vs "Transfer code: 4821"): show the text too.
+            try:
+                shown = client.text(node.ref, 0, 81)
+            except core.ToolError:
+                shown = ""
+            if shown.strip() and shown.strip() != node.name.strip():
+                preview = shown
         ws.elements.append(refs.Element(
             ref="", source="a11y", con_id=int(win["id"]), role=node.role, name=node.name,
             states=sorted(s for s in node.states if s in STATE_SUBSET)
-            + ([] if "enabled" in node.states or "sensitive" in node.states else ["disabled"]),
+            + ([] if "enabled" in node.states or "sensitive" in node.states else ["disabled"])
+            + (["offscreen"] if offscreen else [])
+            + (["popup"] if in_popup(node, by_ref) else []),
             actions=actions, bounds=bounds, preview=preview, a11y=node.ref, frame=frame, csd=csd,
             device_px=ws.profile.device_pixel_extents, app_id=win.get("app_id"), profile=ws.profile.name,
             ifaces=sorted(node.ifaces),
         ))
     return bool(client.truncated or len(kept) > max_elements)
+
+
+def in_popup(node: Any, by_ref: dict[Any, Any]) -> bool:
+    """Inside a menu's popup surface. Its extents are relative to that popup,
+    whose position on Wayland no client and no IPC reports, so the element
+    has no pointer coordinates (measured: a GTK3 menu item 67 px off)."""
+    parent = by_ref.get(node.parent)
+    while parent is not None:
+        if parent.role == "menu":
+            return True
+        parent = by_ref.get(parent.parent)
+    return False
 
 
 def ocr_elements(ws: WindowScene, max_elements: int) -> None:
@@ -186,14 +217,25 @@ def collect(session: Any, scope: str = "agent", window: dict[str, Any] | None = 
                 ws.notes.append(f"a11y: {exc}")
         if not ws.a11y and ws.profile.name == "chromium":
             ws.notes.append("a11y: off — relaunch with --force-renderer-accessibility (launch does this automatically)")
-        a11y_hit = q is None or any(query.matches(q, e.role, e.name, e.preview) for e in ws.elements)
-        want_ocr = ocr_mode == "always" or (ocr_mode == "auto" and (
-            len(ws.elements) < OCR_MIN_ELEMENTS or (q is not None and q.text is not None and not a11y_hit)))
-        if want_ocr and ocr_mode != "never":
+        scenes.append(ws)
+    # Pixels last: OCR runs for windows whose tree is too thin to describe
+    # them, or for a text query; never when an accessible element anywhere
+    # already matches the query or the query names a role OCR cannot have.
+    ocr_can_match = q is None or q.role in (None, "text")
+    a11y_hit = q is not None and any(query.matches(q, e.role, e.name, e.preview)
+                                     for ws in scenes for e in ws.elements)
+    for ws in scenes:
+        onscreen = [e for e in ws.elements if "offscreen" not in e.states]
+        if ocr_mode == "always":
+            want_ocr = True
+        elif ocr_mode == "never" or not ocr_can_match or a11y_hit:
+            want_ocr = False
+        else:
+            want_ocr = len(onscreen) < OCR_MIN_ELEMENTS or (q is not None and q.text is not None)
+        if want_ocr:
             ocr_elements(ws, max_elements)
         for element in ws.elements:
             store.add(snap, element)
-        scenes.append(ws)
     return {"snapshot": snap, "windows": scenes, "truncated": truncated, "scope": scope}
 
 
@@ -201,7 +243,9 @@ def matching(result: dict[str, Any], q: query.Query) -> list[refs.Element]:
     found = []
     for ws in result["windows"]:
         found.extend(e for e in ws.elements if query.matches(q, e.role, e.name, e.preview))
-    return found
+    # Structure before pixels: an OCR word that happens to read like the
+    # query must not shadow the accessible element it describes.
+    return sorted(found, key=lambda e: e.source != "a11y")
 
 
 def _clip(text: str, limit: int) -> str:
@@ -214,11 +258,13 @@ def render_element(e: refs.Element) -> str:
     parts = [f"  {e.ref} {e.role} \"{_clip(e.name, 48)}\""]
     if e.states:
         parts.append("[" + ",".join(e.states) + "]")
-    parts.append(f"@{x},{y} {w}x{h}")
+    if w or h:
+        parts.append(f"@{x},{y} {w}x{h}")
     if e.actions:
         parts.append("actions=" + ",".join(e.actions[:3]))
     if e.preview is not None:
-        parts.append(f"value=\"{_clip(e.preview, 30)}\"")
+        key = "value" if ("editable" in e.states or e.role in ("entry", "text")) else "text"
+        parts.append(f"{key}=\"{_clip(e.preview, 30)}\"")
     if e.source == "ocr":
         parts.append("(ocr)")
     return "  " + _clip(" ".join(parts).lstrip(), LINE_LIMIT - 2)
@@ -245,8 +291,15 @@ def render(session: Any, result: dict[str, Any], q: query.Query | None) -> str:
         )
         for note in ws.notes:
             lines.append(f"  note: {note}")
-        shown = ws.elements if q is None else [e for e in ws.elements if query.matches(q, e.role, e.name, e.preview)]
+        if q is None:
+            shown = [e for e in ws.elements if "offscreen" not in e.states]
+            hidden = len(ws.elements) - len(shown)
+        else:
+            shown = [e for e in ws.elements if query.matches(q, e.role, e.name, e.preview)]
+            hidden = 0
         lines.extend(render_element(e) for e in shown)
+        if hidden:
+            lines.append(f"  (+{hidden} scrolled out of view; find them with a query)")
     if result["truncated"]:
         lines.append("(truncated: raise max_elements or use a query)")
     return "\n".join(lines)
