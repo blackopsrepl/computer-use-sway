@@ -238,5 +238,28 @@ class SandboxTests(unittest.TestCase):
             self.assertTrue(box.root.exists())
 
 
+class AnchorTests(unittest.TestCase):
+    def test_running_follows_the_lock(self) -> None:
+        import fcntl
+        import os
+        import tempfile
+
+        from computer_use_sway import anchor
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                unittest.mock.patch.object(anchor.install, "runtime_root", return_value=Path(tmp)):
+            self.assertFalse(anchor.running())
+            fd = os.open(Path(tmp) / anchor.PID_NAME, os.O_CREAT | os.O_RDWR, 0o600)
+            try:
+                self.assertFalse(anchor.running())  # file without a holder
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                pid = os.fork()
+                if pid == 0:  # another process sees the lock held
+                    os._exit(0 if anchor.running() else 1)
+                self.assertEqual(os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1]), 0)
+            finally:
+                os.close(fd)
+
+
 if __name__ == "__main__":
     unittest.main()

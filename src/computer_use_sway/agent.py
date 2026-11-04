@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import core, install, placement, swayipc, vinput, wire
+from . import anchor, core, install, placement, swayipc, vinput, wire
 
 AGENT_X = 100000
 AGENT_MODE = "1920x1080"
@@ -79,6 +79,7 @@ class Agent:
         self.started = False
         self.created = False
         self.placement = placement.Placement(ipc, log, install.SEAT, user_seat)
+        self.anchor = devices_factory is None  # unit tests inject fake devices and no anchor
 
     # -- events --------------------------------------------------------------
     def _on_event(self, name: str, body: dict) -> None:
@@ -143,6 +144,10 @@ class Agent:
             )
         self.log.add_listener(self._on_event)
         focus_before = self._user_focus()
+        if self.anchor:
+            # Before our own devices: the seat's capabilities must never drop
+            # when this process exits (WezTerm, FINDINGS I7).
+            anchor.ensure()
         self.devices = self._factory()
         self._adopt_or_create_output()
         disturbed = False

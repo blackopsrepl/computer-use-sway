@@ -108,6 +108,12 @@ class Session:
         self.ipc()
         self.user_seat = desktop.detect_seat()
         self._ensure_subscription()
+        if mode == "sandbox":
+            # A headless sway has no keyboard. Give seat0 one now, as a real
+            # session has: a seat0 keyboard that first appears under a running
+            # app sends wl_keyboard.enter before its keymap, and WezTerm
+            # panics on that (FINDINGS I7).
+            self.user_devices().keyboard.chord("Shift_L")
         result: dict[str, Any] = {"mode": mode}
         if mode in ("seat", "sandbox"):
             result["agent"] = self.agent().status()
