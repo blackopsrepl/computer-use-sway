@@ -1,0 +1,67 @@
+{
+ "id": "lists-2",
+ "family": "lists",
+ "param": "-",
+ "expect": "B:done Item 17",
+ "goal": "Select 'Item 17' in the list (scroll if needed), then click Open.",
+ "v1": [
+  {
+   "tool": "run",
+   "args": {
+    "steps": [
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Item 17",
+         "match": "exact"
+        }
+       },
+       "action": "select"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Open",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "window": {
+         "title": "B:done Item 17",
+         "match": "exact"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "scroll_to",
+   "target": "Item 17",
+   "viewport": "List"
+  },
+  {
+   "op": "click",
+   "target": "Item 17"
+  },
+  {
+   "op": "click",
+   "target": "Open"
+  }
+ ]
+}

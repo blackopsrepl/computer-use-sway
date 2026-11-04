@@ -1,0 +1,104 @@
+{
+ "id": "forms-3",
+ "family": "forms",
+ "param": "-",
+ "expect": "B:done Grace|grace@navy.mil|1",
+ "goal": "Fill the Name field with 'Grace' and the Email field with 'grace@navy.mil', tick the Subscribe checkbox, then click Submit.",
+ "v1": [
+  {
+   "tool": "run",
+   "args": {
+    "steps": [
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Name",
+         "match": "exact"
+        }
+       },
+       "action": "set_text",
+       "text": "Grace"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Email",
+         "match": "exact"
+        }
+       },
+       "action": "set_text",
+       "text": "grace@navy.mil"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Subscribe",
+         "match": "exact"
+        }
+       },
+       "action": "toggle"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Submit",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "window": {
+         "title": "B:done Grace|grace@navy.mil|1",
+         "match": "exact"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click",
+   "target": "Name"
+  },
+  {
+   "op": "type",
+   "text": "Grace"
+  },
+  {
+   "op": "click",
+   "target": "Email"
+  },
+  {
+   "op": "type",
+   "text": "grace@navy.mil"
+  },
+  {
+   "op": "click",
+   "target": "Subscribe"
+  },
+  {
+   "op": "click",
+   "target": "Submit"
+  }
+ ]
+}

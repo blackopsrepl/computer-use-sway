@@ -1,0 +1,76 @@
+{
+ "id": "dialogs-4",
+ "family": "dialogs",
+ "param": "draft.odt",
+ "expect": "B:done kept",
+ "goal": "Click 'Delete draft.odt' and answer the confirmation dialog with 'Keep'.",
+ "v1": [
+  {
+   "tool": "run",
+   "args": {
+    "steps": [
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Delete draft.odt",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "element": {
+         "name": "Keep",
+         "match": "exact",
+         "role": "button"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Keep",
+         "match": "exact",
+         "role": "button"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "window": {
+         "title": "B:done kept",
+         "match": "exact"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click",
+   "target": "Delete draft.odt"
+  },
+  {
+   "op": "click",
+   "target": "Keep"
+  }
+ ]
+}

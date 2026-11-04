@@ -1,0 +1,39 @@
+{
+ "id": "text-2",
+ "family": "text",
+ "param": "CHARLIE",
+ "expect": "B:done CHARLIE",
+ "goal": "The window shows nine words drawn on a canvas. Click the word CHARLIE.",
+ "v1": [
+  {
+   "tool": "act",
+   "args": {
+    "target": {
+     "query": {
+      "text": "CHARLIE",
+      "match": "exact"
+     }
+    },
+    "action": "click"
+   }
+  },
+  {
+   "tool": "wait_for",
+   "args": {
+    "condition": {
+     "window": {
+      "title": "B:done CHARLIE",
+      "match": "exact"
+     }
+    },
+    "timeout_ms": 5000
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click_word",
+   "target": "CHARLIE"
+  }
+ ]
+}

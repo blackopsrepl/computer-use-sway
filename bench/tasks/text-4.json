@@ -1,0 +1,39 @@
+{
+ "id": "text-4",
+ "family": "text",
+ "param": "ECHO",
+ "expect": "B:done ECHO",
+ "goal": "The window shows nine words drawn on a canvas. Click the word ECHO.",
+ "v1": [
+  {
+   "tool": "act",
+   "args": {
+    "target": {
+     "query": {
+      "text": "ECHO",
+      "match": "exact"
+     }
+    },
+    "action": "click"
+   }
+  },
+  {
+   "tool": "wait_for",
+   "args": {
+    "condition": {
+     "window": {
+      "title": "B:done ECHO",
+      "match": "exact"
+     }
+    },
+    "timeout_ms": 5000
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click_word",
+   "target": "ECHO"
+  }
+ ]
+}

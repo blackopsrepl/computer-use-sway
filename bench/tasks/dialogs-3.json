@@ -1,0 +1,76 @@
+{
+ "id": "dialogs-3",
+ "family": "dialogs",
+ "param": "photo.png",
+ "expect": "B:done deleted",
+ "goal": "Click 'Delete photo.png' and answer the confirmation dialog with 'Delete'.",
+ "v1": [
+  {
+   "tool": "run",
+   "args": {
+    "steps": [
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Delete photo.png",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "element": {
+         "name": "Delete",
+         "match": "exact",
+         "role": "button"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Delete",
+         "match": "exact",
+         "role": "button"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "window": {
+         "title": "B:done deleted",
+         "match": "exact"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click",
+   "target": "Delete photo.png"
+  },
+  {
+   "op": "click",
+   "target": "Delete"
+  }
+ ]
+}

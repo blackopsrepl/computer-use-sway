@@ -1,0 +1,62 @@
+{
+ "id": "menus-1",
+ "family": "menus",
+ "param": "-",
+ "expect": "B:done Export PDF",
+ "goal": "Choose File > Export PDF from the window's menu bar.",
+ "v1": [
+  {
+   "tool": "run",
+   "args": {
+    "steps": [
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "File",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Export PDF",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "window": {
+         "title": "B:done Export PDF",
+         "match": "exact"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click",
+   "target": "File"
+  },
+  {
+   "op": "click",
+   "target": "Export PDF"
+  }
+ ]
+}

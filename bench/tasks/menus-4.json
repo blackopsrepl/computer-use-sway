@@ -1,0 +1,62 @@
+{
+ "id": "menus-4",
+ "family": "menus",
+ "param": "-",
+ "expect": "B:done Preferences",
+ "goal": "Choose Edit > Preferences from the window's menu bar.",
+ "v1": [
+  {
+   "tool": "run",
+   "args": {
+    "steps": [
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Edit",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Preferences",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "window": {
+         "title": "B:done Preferences",
+         "match": "exact"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click",
+   "target": "Edit"
+  },
+  {
+   "op": "click",
+   "target": "Preferences"
+  }
+ ]
+}

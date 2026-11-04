@@ -1,0 +1,88 @@
+{
+ "id": "forms-2",
+ "family": "forms",
+ "param": "-",
+ "expect": "B:done Linus|linus@kernel.org|0",
+ "goal": "Fill the Name field with 'Linus' and the Email field with 'linus@kernel.org', leave Subscribe unticked, then click Submit.",
+ "v1": [
+  {
+   "tool": "run",
+   "args": {
+    "steps": [
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Name",
+         "match": "exact"
+        }
+       },
+       "action": "set_text",
+       "text": "Linus"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Email",
+         "match": "exact"
+        }
+       },
+       "action": "set_text",
+       "text": "linus@kernel.org"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Submit",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "window": {
+         "title": "B:done Linus|linus@kernel.org|0",
+         "match": "exact"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click",
+   "target": "Name"
+  },
+  {
+   "op": "type",
+   "text": "Linus"
+  },
+  {
+   "op": "click",
+   "target": "Email"
+  },
+  {
+   "op": "type",
+   "text": "linus@kernel.org"
+  },
+  {
+   "op": "click",
+   "target": "Submit"
+  }
+ ]
+}

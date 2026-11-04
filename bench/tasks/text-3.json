@@ -1,0 +1,39 @@
+{
+ "id": "text-3",
+ "family": "text",
+ "param": "INDIA",
+ "expect": "B:done INDIA",
+ "goal": "The window shows nine words drawn on a canvas. Click the word INDIA.",
+ "v1": [
+  {
+   "tool": "act",
+   "args": {
+    "target": {
+     "query": {
+      "text": "INDIA",
+      "match": "exact"
+     }
+    },
+    "action": "click"
+   }
+  },
+  {
+   "tool": "wait_for",
+   "args": {
+    "condition": {
+     "window": {
+      "title": "B:done INDIA",
+      "match": "exact"
+     }
+    },
+    "timeout_ms": 5000
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click_word",
+   "target": "INDIA"
+  }
+ ]
+}

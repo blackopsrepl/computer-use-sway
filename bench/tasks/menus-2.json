@@ -1,0 +1,62 @@
+{
+ "id": "menus-2",
+ "family": "menus",
+ "param": "-",
+ "expect": "B:done Export PNG",
+ "goal": "Choose File > Export PNG from the window's menu bar.",
+ "v1": [
+  {
+   "tool": "run",
+   "args": {
+    "steps": [
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "File",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Export PNG",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "window": {
+         "title": "B:done Export PNG",
+         "match": "exact"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click",
+   "target": "File"
+  },
+  {
+   "op": "click",
+   "target": "Export PNG"
+  }
+ ]
+}

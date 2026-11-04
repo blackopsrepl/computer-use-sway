@@ -1,0 +1,88 @@
+{
+ "id": "forms-4",
+ "family": "forms",
+ "param": "-",
+ "expect": "B:done Ken|ken@bell-labs.com|0",
+ "goal": "Fill the Name field with 'Ken' and the Email field with 'ken@bell-labs.com', leave Subscribe unticked, then click Submit.",
+ "v1": [
+  {
+   "tool": "run",
+   "args": {
+    "steps": [
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Name",
+         "match": "exact"
+        }
+       },
+       "action": "set_text",
+       "text": "Ken"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Email",
+         "match": "exact"
+        }
+       },
+       "action": "set_text",
+       "text": "ken@bell-labs.com"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Submit",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "window": {
+         "title": "B:done Ken|ken@bell-labs.com|0",
+         "match": "exact"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click",
+   "target": "Name"
+  },
+  {
+   "op": "type",
+   "text": "Ken"
+  },
+  {
+   "op": "click",
+   "target": "Email"
+  },
+  {
+   "op": "type",
+   "text": "ken@bell-labs.com"
+  },
+  {
+   "op": "click",
+   "target": "Submit"
+  }
+ ]
+}

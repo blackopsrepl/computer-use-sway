@@ -1,0 +1,67 @@
+{
+ "id": "lists-3",
+ "family": "lists",
+ "param": "-",
+ "expect": "B:done Item 29",
+ "goal": "Select 'Item 29' in the list (scroll if needed), then click Open.",
+ "v1": [
+  {
+   "tool": "run",
+   "args": {
+    "steps": [
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Item 29",
+         "match": "exact"
+        }
+       },
+       "action": "select"
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Open",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "window": {
+         "title": "B:done Item 29",
+         "match": "exact"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "scroll_to",
+   "target": "Item 29",
+   "viewport": "List"
+  },
+  {
+   "op": "click",
+   "target": "Item 29"
+  },
+  {
+   "op": "click",
+   "target": "Open"
+  }
+ ]
+}

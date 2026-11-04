@@ -1,0 +1,76 @@
+{
+ "id": "dialogs-1",
+ "family": "dialogs",
+ "param": "report.pdf",
+ "expect": "B:done deleted",
+ "goal": "Click 'Delete report.pdf' and answer the confirmation dialog with 'Delete'.",
+ "v1": [
+  {
+   "tool": "run",
+   "args": {
+    "steps": [
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Delete report.pdf",
+         "match": "exact"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "element": {
+         "name": "Delete",
+         "match": "exact",
+         "role": "button"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     },
+     {
+      "tool": "act",
+      "args": {
+       "target": {
+        "query": {
+         "name": "Delete",
+         "match": "exact",
+         "role": "button"
+        }
+       },
+       "action": "press"
+      }
+     },
+     {
+      "tool": "wait_for",
+      "args": {
+       "condition": {
+        "window": {
+         "title": "B:done deleted",
+         "match": "exact"
+        }
+       },
+       "timeout_ms": 5000
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "legacy": [
+  {
+   "op": "click",
+   "target": "Delete report.pdf"
+  },
+  {
+   "op": "click",
+   "target": "Delete"
+  }
+ ]
+}
