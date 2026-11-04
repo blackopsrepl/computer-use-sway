@@ -142,6 +142,10 @@ def ladder(session: Any, action: str, element: Any, profile: toolkits.Profile, d
         rungs.append("agent")
     if session.options.get("foreground", "idle") != "never":
         rungs.append("foreground")
+    # A pointer click the seats cannot deliver (single-seat toolkit, seat0
+    # pointer not allowed) still has a meaning: the element's press action.
+    if action == "click" and element is not None and element.source == "a11y" and element.actions:
+        rungs.append("semantic")
     return rungs
 
 
@@ -176,6 +180,14 @@ def act(session: Any, target: Any, action: str, d: Delivery, delivery: str = "au
                 raise
             continue
         used = rung
+        if out.get("blocked") and rung != rungs[-1]:
+            escalations.append({"rung": rung, "blocked": out["blocked"]})
+            continue
+        if action == "set_text" and out.get("readback_failed") and rung != rungs[-1]:
+            # Gecko's SetTextContents reports success and changes nothing [A7];
+            # set_text is idempotent, so the next rung may redo it.
+            escalations.append({"rung": rung, "effect": out["effect"], "readback_failed": True})
+            continue
         if out.get("blocked") or out["effect"] in ("confirmed", "changed") or not do_verify:
             break
         escalations.append({"rung": rung, "effect": out["effect"]})
