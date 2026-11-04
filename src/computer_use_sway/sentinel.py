@@ -39,18 +39,46 @@ class Sentinel:
                 return int(focus) if isinstance(focus, int) and focus else None
         return None
 
+    def _node_kind(self, con_id: int) -> tuple[str | None, str | None]:
+        """(node type, workspace name) of a node in the tree."""
+        def walk(node: dict[str, Any], workspace: str | None) -> tuple[str | None, str | None] | None:
+            if node.get("type") == "workspace":
+                workspace = node.get("name")
+            if node.get("id") == con_id:
+                return node.get("type"), workspace
+            for key in ("nodes", "floating_nodes"):
+                for child in node.get(key) or []:
+                    hit = walk(child, workspace)
+                    if hit is not None:
+                        return hit
+            return None
+
+        return walk(self.ipc.tree(), None) or (None, None)
+
     def snapshot(self) -> dict[str, Any]:
-        return {"focus": self.focus(), "t": time.monotonic()}
+        focus = self.focus()
+        kind, workspace = self._node_kind(focus) if focus else (None, None)
+        return {"focus": focus, "kind": kind, "workspace": workspace, "t": time.monotonic()}
 
     def restore(self, snap: dict[str, Any]) -> bool:
-        """Put seat0 focus back if it moved. True when a restore was needed."""
+        """Put seat0 focus back if it moved. True when a restore was needed.
+
+        An empty workspace is focused as a workspace node, which `[con_id=]`
+        criteria never match, so it is restored by name.
+        """
         want = snap.get("focus")
         if not want or self.focus() == want:
             return False
         try:
-            self.ipc.command(f"[con_id={int(want)}] focus")
-        except core.ToolError:
-            return True
+            if snap.get("kind") == "workspace" and snap.get("workspace"):
+                name = str(snap["workspace"]).replace("\\", "\\\\").replace('"', '\\"')
+                self.ipc.command(f'workspace "{name}"')
+            else:
+                self.ipc.command(f"[con_id={int(want)}] focus")
+        except core.ToolError as exc:
+            core.eprint(f"could not restore the user's focus: {exc}")
+        if self.focus() != want:
+            core.eprint(f"user focus restore incomplete: wanted {want}, have {self.focus()}")
         return True
 
     # -- idle ----------------------------------------------------------------

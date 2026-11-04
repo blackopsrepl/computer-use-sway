@@ -33,7 +33,7 @@ def semantic(client: Any, action: str, element: Any, d: Delivery) -> None:
     if client is None or element is None or element.a11y is None:
         raise core.ToolError("no accessibility element for a semantic action", code="no_semantic")
     ref = element.a11y
-    if action in ("press", "activate"):
+    if action in ("press", "activate", "click"):
         client.do_action(ref, "press")
     elif action == "toggle":
         index = client.resolve_action(ref, "toggle")
@@ -145,10 +145,6 @@ def foreground(session: Any, action: str, element: Any, con_id: int | None, poin
             device_form(devices, action, element, point, d)
         out = verify.verdict(session, base, expect) if do_verify else verify.disabled()
     finally:
-        if snap.get("focus") and snap["focus"] != con_id:
-            try:
-                desktop.ipc().command(f"[con_id={int(snap['focus'])}] focus")  # [F1]
-            except core.ToolError:
-                pass
+        sentinel.restore(snap)  # [F1]; by workspace name when it was empty
     out["disturbed_user"] = True
     return out
