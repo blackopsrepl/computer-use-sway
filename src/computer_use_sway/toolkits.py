@@ -29,8 +29,11 @@ PROFILES = {
     "qt": Profile("qt", True, "reliable", False, False, (), True),
     "gecko": Profile("gecko", True, "lies", False, True, (), True),
     "chromium": Profile("chromium", False, "absent", True, None, ("--force-renderer-accessibility",), False),
-    # kitty measured; foot/alacritty/wezterm/ghostty assumed until measured
+    # Terminals [I5, I7]: kitty ignores a second seat; WezTerm binds one
+    # keyboard across all seats (the user's, which exists first); foot,
+    # Alacritty and Ghostty accept the agent seat. None exposes its text.
     "terminal": Profile("terminal", False, "absent", False, None, (), False),
+    "terminal-seat": Profile("terminal-seat", True, "absent", False, None, (), False),
     "unknown": Profile("unknown", None, "absent", False, None, (), False),
 }
 
@@ -49,8 +52,24 @@ def _major(version: str | None) -> int | None:
     return int(head) if head.isdigit() else None
 
 
+def _terminal(app_id: str | None, argv0: str | None) -> Profile | None:
+    for candidate in (app_id, argv0):
+        if candidate:
+            base = candidate.lower().rsplit("/", 1)[-1]
+            if base in SEAT_TERMINALS:
+                return PROFILES["terminal-seat"]
+            if base in SINGLE_SEAT_TERMINALS:
+                return PROFILES["terminal"]
+    return None
+
+
 def classify(toolkit_name: str | None, app_id: str | None, argv0: str | None = None,
              toolkit_version: str | None = None) -> Profile:
+    # A terminal before its toolkit: Ghostty is GTK4 on the bus, but its
+    # terminal surface has no text interface and its own seat behaviour.
+    terminal = _terminal(app_id, argv0)
+    if terminal is not None:
+        return terminal
     if toolkit_name:
         lowered = toolkit_name.lower()
         if lowered == "gtk":
@@ -69,8 +88,6 @@ def classify(toolkit_name: str | None, app_id: str | None, argv0: str | None = N
             continue
         lowered = candidate.lower()
         base = lowered.rsplit("/", 1)[-1]
-        if base in TERMINALS or lowered in TERMINALS:
-            return PROFILES["terminal"]
         if base in ELECTRON_APPS or any(h in base for h in CHROMIUM_HINTS):
             return PROFILES["chromium"]
         if base in {"firefox", "org.mozilla.firefox", "librewolf", "thunderbird"}:
