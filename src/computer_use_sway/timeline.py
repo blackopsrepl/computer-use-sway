@@ -31,34 +31,52 @@ STREAM_SOURCE = "computer-use-sway"
 STREAM_DIR_MODE = 0o700
 STREAM_FILE_MODE = 0o600
 
-TIMELINE_ACTION_TOOLS = (
-    "screen_info",
-    "screenshot",
-    "window_tree",
-    "focus_window",
-    "move_pointer",
-    "click",
-    "drag",
-    "scroll",
-    "type_text",
-    "key",
-    "clipboard_set",
-    "clipboard_get",
-)
 TIMELINE_PAYLOAD_KEYS: dict[str, tuple[str, ...]] = {
+    "session": ("action", "mode"),
     "screen_info": (),
-    "screenshot": ("output", "include_cursor", "region"),
+    "observe": ("scope", "max_elements", "ocr", "image"),
+    "read": ("ref", "start", "length"),
+    "act": ("action", "delivery", "verify", "direction", "clicks", "key", "modifiers"),
+    "run": ("stop_on",),
+    "wait_for": ("timeout_ms",),
+    "launch": ("a11y",),
+    "screenshot": ("output", "include_cursor", "region", "target_output"),
     "window_tree": ("include_scratchpad", "max_depth"),
-    "focus_window": ("con_id", "app_id", "class", "title", "match"),
-    "move_pointer": ("x", "y", "mode"),
-    "click": ("x", "y", "button", "count", "interval_ms"),
-    "drag": ("from", "to", "button", "steps", "duration_ms"),
-    "scroll": ("x", "y", "direction", "clicks"),
-    "type_text": ("delay_ms",),
-    "key": ("key", "modifiers"),
-    "clipboard_set": (),
-    "clipboard_get": ("max_bytes",),
+    "focus_window": ("con_id", "app_id", "class", "title", "match", "seat", "move_to_agent"),
+    "move_pointer": ("x", "y", "mode", "seat"),
+    "click": ("x", "y", "button", "count", "interval_ms", "seat"),
+    "drag": ("from", "to", "button", "steps", "duration_ms", "seat"),
+    "scroll": ("x", "y", "direction", "clicks", "seat"),
+    "type_text": ("delay_ms", "seat"),
+    "key": ("key", "modifiers", "seat"),
+    "clipboard_set": ("seat",),
+    "clipboard_get": ("max_bytes", "seat"),
 }
+TIMELINE_ACTION_TOOLS = tuple(TIMELINE_PAYLOAD_KEYS)
+# Never published, at any depth, whatever a tool puts in its meta.
+SECRET_KEYS = frozenset({"text", "value", "content", "clipboard", "password", "env", "argv"})
+
+
+def _scrub(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _scrub(v) for k, v in value.items() if k not in SECRET_KEYS}
+    if isinstance(value, list):
+        return [_scrub(v) for v in value]
+    return value
+
+
+def _curate_target(target: Any) -> dict[str, Any]:
+    if not isinstance(target, dict):
+        return {}
+    if isinstance(target.get("ref"), str):
+        return {"ref": target["ref"]}
+    if "x" in target and "y" in target:
+        return {"point": {"x": target.get("x"), "y": target.get("y")}}
+    query = target.get("query")
+    if isinstance(query, dict):
+        name = query.get("name")
+        return {"query_role": query.get("role"), "name_chars": len(name) if isinstance(name, str) else 0}
+    return {}
 
 
 def timeline_payload(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -75,12 +93,50 @@ def timeline_payload(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         text = arguments.get("text")
         if isinstance(text, str):
             payload["bytes"] = len(text.encode("utf-8"))
+    elif name == "observe":
+        query = arguments.get("query")
+        if isinstance(query, dict):
+            qname, qtext = query.get("name"), query.get("text")
+            payload["query"] = {
+                "role": query.get("role"),
+                "match": query.get("match"),
+                "name_chars": len(qname) if isinstance(qname, str) else 0,
+                "text_chars": len(qtext) if isinstance(qtext, str) else 0,
+            }
+    elif name == "act":
+        payload["target"] = _curate_target(arguments.get("target"))
+        if arguments.get("to") is not None:
+            payload["to"] = _curate_target(arguments.get("to"))
+        text = arguments.get("text")
+        if isinstance(text, str):
+            payload["characters"] = len(text)
+    elif name == "launch":
+        argv = arguments.get("argv")
+        if isinstance(argv, list) and argv and isinstance(argv[0], str):
+            payload["program"] = os.path.basename(argv[0])
+    elif name == "run":
+        steps = arguments.get("steps")
+        if isinstance(steps, list):
+            payload["steps"] = len(steps)
+            payload["tools"] = [s.get("tool") for s in steps if isinstance(s, dict)]
     return payload
+
+
+_pinned_runtime: str | None = None
+
+
+def pin_runtime(runtime_dir: str | None) -> None:
+    """Keep publishing to the live session's stream while sandbox mode
+    re-points XDG_RUNTIME_DIR; None unpins."""
+    global _pinned_runtime
+    _pinned_runtime = runtime_dir
 
 
 def stream_path() -> Path | None:
     """Where this server publishes its stream, or None without a runtime dir."""
-    runtime_dir = os.environ.get("XDG_RUNTIME_DIR")
+    # Pinned at startup: sandbox mode re-points XDG_RUNTIME_DIR for its
+    # children, but the recorder keeps reading the live session's stream.
+    runtime_dir = _pinned_runtime or os.environ.get("XDG_RUNTIME_DIR")
     if not runtime_dir:
         return None
     return (
@@ -110,7 +166,13 @@ def reset_stream() -> None:
         pass
 
 
-def append_event(name: str, arguments: dict[str, Any], at_monotonic: float, ok: bool) -> None:
+def append_event(
+    name: str,
+    arguments: dict[str, Any],
+    at_monotonic: float,
+    ok: bool,
+    meta: dict[str, Any] | None = None,
+) -> None:
     """Publish one dispatched action to the timeline stream.
 
     Silent by design. A take that cannot see these actions has no anchors, which
@@ -126,7 +188,7 @@ def append_event(name: str, arguments: dict[str, Any], at_monotonic: float, ok: 
         "at_monotonic": round(float(at_monotonic), 6),
         "tool": name,
         "ok": bool(ok),
-        "payload": timeline_payload(name, arguments),
+        "payload": _scrub({**timeline_payload(name, arguments), **(meta or {})}),
         "source": STREAM_SOURCE,
     }
     line = (json.dumps(record, sort_keys=True) + "\n").encode("utf-8")

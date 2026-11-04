@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from computer_use_sway import server
+from computer_use_sway import cli, core, server
 
 
 class ProtocolTests(unittest.TestCase):
@@ -28,8 +28,9 @@ class ProtocolTests(unittest.TestCase):
 
         instructions = response["result"]["instructions"]
         self.assertIsInstance(instructions, str)
-        self.assertIn("never invent", instructions)
-        self.assertIn("verify the visible result", instructions)
+        self.assertIn("observe", instructions)
+        self.assertIn("no_change", instructions)
+        self.assertIn("never paste", instructions)
         self.assertIn("neither records nor narrates", instructions)
         self.assertIn("seshat", instructions)
         self.assertNotIn("recording_status", instructions)
@@ -43,7 +44,14 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(
             names,
             {
+                "session",
                 "screen_info",
+                "observe",
+                "read",
+                "act",
+                "run",
+                "wait_for",
+                "launch",
                 "screenshot",
                 "window_tree",
                 "focus_window",
@@ -73,6 +81,32 @@ class ProtocolTests(unittest.TestCase):
             with self.assertRaises(AttributeError, msg=module):
                 getattr(server, module)
 
+    def test_every_tool_has_annotations_and_a_strict_schema(self) -> None:
+        response = server.handle_message({"jsonrpc": "2.0", "id": 6, "method": "tools/list"})
+        tools = response["result"]["tools"]
+        self.assertEqual(len(tools), 19)
+        self.assertEqual(tools[0]["name"], "session")
+        for tool in tools:
+            self.assertIn("readOnlyHint", tool["annotations"], tool["name"])
+            self.assertIs(tool["inputSchema"]["additionalProperties"], False, tool["name"])
+        no_wtype = json.dumps(tools)
+        self.assertNotIn("wtype", no_wtype)
+
+    def test_tool_error_codes_are_published_not_shown(self) -> None:
+        def boom(_: dict) -> list:
+            raise core.ToolError("stale_ref s1:1: element changed", code="stale_ref")
+
+        with patch.dict(server.TOOLS, {"read": boom}), patch.object(server, "append_event") as publish:
+            response = server.handle_message({"jsonrpc": "2.0", "id": 7, "method": "tools/call",
+                                              "params": {"name": "read", "arguments": {"ref": "s1:1"}}})
+        self.assertTrue(response["result"]["isError"])
+        self.assertEqual(publish.call_args.args[4], {"error": "stale_ref"})
+
+    def test_non_object_arguments_are_rejected(self) -> None:
+        response = server.handle_message({"jsonrpc": "2.0", "id": 8, "method": "tools/call",
+                                          "params": {"name": "observe", "arguments": [1]}})
+        self.assertTrue(response["result"]["isError"])
+
     def test_unknown_tool_returns_tool_error_result(self) -> None:
         response = server.handle_message(
             {
@@ -96,8 +130,8 @@ class ProtocolTests(unittest.TestCase):
         self.assertIsNone(response)
 
     def test_command_argv_uses_environment_override(self) -> None:
-        with patch.dict(os.environ, {server.COMMAND_ENV: "/tmp/cus --flag"}, clear=False):
-            self.assertEqual(server.command_argv(), ["/tmp/cus", "--flag"])
+        with patch.dict(os.environ, {core.COMMAND_ENV: "/tmp/cus --flag"}, clear=False):
+            self.assertEqual(cli.command_argv(), ["/tmp/cus", "--flag"])
 
     def test_command_argv_prefers_invoked_console_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -105,9 +139,9 @@ class ProtocolTests(unittest.TestCase):
             script.write_text("#!/bin/sh\n", encoding="utf-8")
 
             with patch.dict(os.environ, {}, clear=False):
-                os.environ.pop(server.COMMAND_ENV, None)
-                with patch.object(server.sys, "argv", [str(script)]):
-                    self.assertEqual(server.command_argv(), [str(script)])
+                os.environ.pop(core.COMMAND_ENV, None)
+                with patch.object(core.sys, "argv", [str(script)]):
+                    self.assertEqual(cli.command_argv(), [str(script)])
 
 
 if __name__ == "__main__":

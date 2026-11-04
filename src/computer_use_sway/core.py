@@ -7,7 +7,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,27 +21,28 @@ TEXT_LIMIT = 10_000
 CLIPBOARD_LIMIT = 100_000
 
 
-BUTTONS = {
-    "left": "button1",
-    "middle": "button2",
-    "right": "button3",
-}
-SCROLL_BUTTONS = {
-    "up": "button4",
-    "down": "button5",
-    "left": "button6",
-    "right": "button7",
-}
-MODIFIERS = {
-    "ctrl": "ctrl",
-    "shift": "shift",
-    "alt": "alt",
-    "logo": "logo",
-}
-
-
 class ToolError(Exception):
-    """Expected tool failure reported as MCP tool content."""
+    """Expected tool failure reported as MCP tool content.
+
+    `code` is an optional machine-readable reason (``stale_ref``,
+    ``agent_seat_missing``, ...); the message stays human-readable.
+    """
+
+    def __init__(self, message: str = "", code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass
+class Result:
+    """Tool content plus curated, timeline-safe metadata for the stream."""
+
+    content: list[dict[str, Any]]
+    meta: dict[str, Any] = field(default_factory=dict)
+
+
+def text_result(value: Any, meta: dict[str, Any] | None = None) -> Result:
+    return Result(json_text(value), dict(meta or {}))
 
 
 @dataclass
@@ -158,10 +159,6 @@ def ensure_session_environment() -> None:
                 break
 
 
-def read_json_command(args: list[str], timeout: float = DEFAULT_TIMEOUT) -> Any:
-    return json.loads(run_command(args, timeout=timeout).text)
-
-
 def require_session() -> None:
     ensure_session_environment()
     missing = [
@@ -174,8 +171,9 @@ def require_session() -> None:
             "not running inside a usable Sway session; missing "
             + ", ".join(missing)
         )
-    require_binaries(["swaymsg"])
-    read_json_command(["swaymsg", "-t", "get_outputs"])
+    from . import swayipc
+
+    swayipc.connect().outputs()
 
 
 def strict_int(value: Any, name: str) -> int:
