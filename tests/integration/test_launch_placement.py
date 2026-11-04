@@ -47,5 +47,27 @@ class LaunchPlacementTests(unittest.TestCase):
                     sess.stop()
 
 
+BENCH_APP = Path(__file__).resolve().parents[2] / "bench" / "app.py"
+
+
+@unittest.skipUnless(shutil.which("sway") and shutil.which("dbus-daemon"), "needs sway and dbus-daemon")
+class SecondaryWindowTests(unittest.TestCase):
+    def test_a_later_dialog_also_lands_on_the_agent_workspace(self) -> None:
+        """sway consumes the launch context on the first window; a dialog
+        opened afterwards must not map on (and take focus from) the user."""
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from harness import Box
+
+        with Box() as b:
+            a = b.oracle("A")
+            b.user_pointer().click(*b.center_of(a, "A", "entry"))
+            log = str(Path(b.assets) / "bench.jsonl")
+            b.call("launch", {"argv": ["/usr/bin/python3", str(BENCH_APP), "dialogs", "x.pdf", log]})
+            b.call("act", {"target": {"query": {"name": "Delete x.pdf", "match": "exact"}}, "action": "press"})
+            dialog = b.wait(lambda: next((w for w in desktop.all_windows() if w.get("name") == "Confirm"), None), 10)
+            self.assertEqual(dialog["workspace"], "cus-agent")
+            self.assertEqual(b.seat_focus("seat0"), a["id"])
+
+
 if __name__ == "__main__":
     unittest.main()

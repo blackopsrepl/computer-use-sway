@@ -44,8 +44,10 @@ class TransportTests(unittest.TestCase):
             self.assertGreaterEqual(len(b.events("A", "scroll")) - before, 3)
 
     def test_t1_2_unicode_shift_and_chords_on_seat0(self) -> None:
-        text = "Ab9 !@#$%^&*()_+{}|:\"<>? é ü ß 日本 €"
-        for name in ("gtk3", "gtk4", "qt6", "firefox"):
+        # 8 distinct non-ASCII characters: more than the six character slots,
+        # so the keymap is rebound mid-text [I3, I6].
+        text = "Ab9 !@#$%^&*()_+{}|:\"<>? é ü ß 日本 € ñ Ω"
+        for name in ("gtk3", "gtk4", "qt6", "firefox", "chromium", "electron"):
             if not available(name):
                 continue
             with self.subTest(name), Box() as b:
@@ -114,9 +116,14 @@ class SeatTests(unittest.TestCase):
             with self.assertRaises(vinput.AgentSeatLost):
                 agent.gate()
             b.sess.agent()  # ensure_ready recovers
-            seats = {s["name"]: s for s in desktop.get_seats()}
-            self.assertEqual(len(seats[install.SEAT]["devices"]), 2)
-            self.assertEqual(len(seats["seat0"]["devices"]), seat0_devices)
+
+            def counts() -> tuple[int, int]:
+                seats = {s["name"]: s for s in desktop.get_seats()}
+                return len(seats[install.SEAT]["devices"]), len(seats["seat0"]["devices"])
+
+            # The agent's pointer and keyboard plus the anchor's pair, which the
+            # anchor puts back by itself; seat0 keeps exactly what it had.
+            b.wait(lambda: counts() == (4, seat0_devices), 5)
             outs = {o["name"]: o["rect"] for o in desktop.get_outputs()}
             self.assertEqual(outs[agent.output]["x"], 100000)
             for name, (x, y) in user_outputs.items():

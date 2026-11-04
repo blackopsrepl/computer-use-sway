@@ -137,8 +137,11 @@ class Box:
         text = self.call("observe", args)
         for line in text.splitlines():
             parts = line.split()
-            if parts and parts[0].startswith("s") and ":" in parts[0] and f'"{name}"' in line:
-                return parts[0]
+            if not (parts and parts[0].startswith("s") and ":" in parts[0] and f'"{name}"' in line):
+                continue
+            if ocr and not line.endswith("(ocr)"):
+                continue
+            return parts[0]
         raise AssertionError(f"no element {name!r} in:\n{text}")
 
     def center_of(self, oracle_window: dict[str, Any], name: str, widget: str) -> tuple[int, int]:
