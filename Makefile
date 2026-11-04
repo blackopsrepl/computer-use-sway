@@ -1,6 +1,6 @@
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
-.PHONY: check test py-compile lint-files doctor build clean
+.PHONY: check test py-compile lint-files integration doctor build clean
 
 check: test py-compile lint-files
 
@@ -12,6 +12,9 @@ py-compile:
 
 lint-files:
 	$(PYTHON) scripts/check_file_length.py
+
+integration:
+	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests/integration -v
 
 doctor:
 	PYTHONPATH=src $(PYTHON) -m computer_use_sway --doctor

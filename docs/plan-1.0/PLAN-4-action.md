@@ -196,11 +196,12 @@ def launch(session, argv: list[str], cwd: str | None = None, env: dict[str, str]
    #!/bin/sh
    cd <shlex.quote(cwd)> || exit 1          # only if cwd
    export K=<shlex.quote(v)> ...            # only if env
-   exec env -u XDG_ACTIVATION_TOKEN -u DESKTOP_STARTUP_ID <shlex.join(argv)>
+   exec <shlex.join(argv)>
    ```
 
-   Stripping the activation token keeps the new app from asking for
-   activation on seat0.
+   Keep the activation token sway passes to the exec: Qt and Chromium
+   place their first window by it, and without it they map on the user's
+   workspace and take seat0 focus [O11].
 4. `before = set(con ids)`; `t0 = monotonic()`
 5. `agent.ensure_ready()`; `agent.to_workspace()`; `agent.tap(LAUNCH_KEY)`
    (the tap includes `nop`).

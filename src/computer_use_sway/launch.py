@@ -5,7 +5,9 @@ binding (`bindsym <LAUNCH_KEY> exec <launcher>`), fired from the agent
 keyboard while the agent seat sits on workspace `cus-agent`: sway then maps
 the new window there, for the agent seat, without touching seat0 (O5, O6,
 O9, O10). The launcher script is rewritten per launch and reset to a no-op
-placeholder afterwards so a stray key tap does nothing.
+placeholder afterwards so a stray key tap does nothing. The activation
+token sway passes to the exec is kept: it is what places Qt and Chromium
+windows (O11).
 """
 
 from __future__ import annotations
@@ -21,6 +23,10 @@ from typing import Any
 from . import core, desktop, install, toolkits
 
 ENV_KEY = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+# Only for user mode, where the child inherits *our* environment and a stale
+# token there would be wrong. In seat mode the token sway's exec creates is
+# what places the window on the agent workspace: Qt and Chromium map on the
+# user's workspace and take seat0 focus without it (measured, FINDINGS O11).
 STRIP = ("XDG_ACTIVATION_TOKEN", "DESKTOP_STARTUP_ID")
 
 
@@ -60,8 +66,7 @@ def script(argv: list[str], cwd: str | None, env: dict[str, str]) -> str:
         lines.append(f"cd {shlex.quote(cwd)} || exit 1")
     for key, value in env.items():
         lines.append(f"export {key}={shlex.quote(value)}")
-    unset = " ".join(f"-u {name}" for name in STRIP)
-    lines.append(f"exec env {unset} {shlex.join(argv)}")
+    lines.append(f"exec {shlex.join(argv)}")
     return "\n".join(lines) + "\n"
 
 
