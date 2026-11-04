@@ -18,7 +18,7 @@ def specs() -> list[dict[str, Any]]:
         },
         {
             "name": "screenshot",
-            "description": "Capture the screen, a region, one window, or one output (including the agent output) as PNG. Use only when you need pixels; observe is cheaper. Pass save_path to write it to disk and return text-only metadata instead.",
+            "description": "Capture the user's screen (default), a region, one window, or one output (target_output 'agent' for the agent output) as PNG. Use only when you need pixels; observe is cheaper. Pass save_path to write it to disk and return text-only metadata instead.",
             "annotations": READ_ONLY,
             "inputSchema": {
                 "type": "object",

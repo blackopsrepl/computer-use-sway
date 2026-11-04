@@ -81,7 +81,26 @@ def screenshot_region(arguments: dict[str, Any]) -> tuple[dict[str, int] | None,
         if target not in names:
             raise core.ToolError(f"no active output named {target!r}")
         return None, target
+    if arguments.get("region") is None:
+        return user_area(), None
     return desktop.validate_region(arguments.get("region")), None
+
+
+def user_area() -> dict[str, int] | None:
+    """The bounding box of the user's outputs. The agent output sits 100000 px
+    away; a whole-layout capture would span the gap (a 110-megapixel image)
+    and show the user nothing they can see. None when no agent output exists."""
+    sess = session.current()
+    agent_output = sess._agent.output if sess._agent is not None else None
+    if agent_output is None:
+        return None
+    rects = [o["rect"] for o in desktop.get_outputs() if o.get("name") != agent_output]
+    if not rects:
+        return None
+    x0, y0 = min(r["x"] for r in rects), min(r["y"] for r in rects)
+    x1 = max(r["x"] + r["width"] for r in rects)
+    y1 = max(r["y"] + r["height"] for r in rects)
+    return {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}
 
 
 def tool_screenshot(arguments: dict[str, Any]) -> core.Result:
