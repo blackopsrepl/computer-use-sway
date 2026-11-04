@@ -17,7 +17,9 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import time
+from pathlib import Path
 from typing import Any
 
 from . import core, desktop, install, toolkits
@@ -60,13 +62,19 @@ def with_a11y_flags(argv: list[str], a11y: bool) -> tuple[list[str], toolkits.Pr
     return argv, profile
 
 
+REAPER = Path(__file__).with_name("reaper.py")
+
+
 def script(argv: list[str], cwd: str | None, env: dict[str, str]) -> str:
     lines = ["#!/bin/sh"]
     if cwd:
         lines.append(f"cd {shlex.quote(cwd)} || exit 1")
     for key, value in env.items():
         lines.append(f"export {key}={shlex.quote(value)}")
-    lines.append(f"exec {shlex.join(argv)}")
+    # The reaper keeps sway's launch pid alive as the subreaper of everything
+    # the app forks, so sway's pid-ancestry placement holds for apps whose
+    # launcher process exits (Electron).
+    lines.append(f"exec {shlex.join([sys.executable, str(REAPER), *argv])}")
     return "\n".join(lines) + "\n"
 
 
@@ -160,6 +168,13 @@ def launch(session: Any, argv: Any, cwd: Any = None, env: Any = None, timeout_ms
             agent.to_workspace()
             agent.tap(install.LAUNCH_KEY)
             win = _wait_new_window(session, before, t0, timeout_ms / 1000.0, install.SEAT)
+            if win is not None and win.get("workspace") != install.SEAT:
+                # Placement failed (e.g. the app handed the window to an already
+                # running instance): move it off the user's screen.
+                moved_from = win.get("workspace")
+                desktop.ipc().command(f"[con_id={int(win['id'])}] move container to workspace {install.SEAT}")
+                win = desktop.window_by_id(int(win["id"])) or win
+                win["moved_from"] = moved_from
             if win is not None:
                 win = _settle_title(int(win["id"])) or win
                 agent.focus(int(win["id"]))

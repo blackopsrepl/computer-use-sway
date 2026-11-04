@@ -66,7 +66,8 @@ class LaunchTests(unittest.TestCase):
         text = launch.script(["/usr/bin/app", "a b", "it's"], "/tmp/x y", {"FOO": "1 2"})
         self.assertIn("cd '/tmp/x y' || exit 1", text)
         self.assertIn("export FOO='1 2'", text)
-        self.assertIn("exec /usr/bin/app 'a b' 'it'\"'\"'s'", text)
+        self.assertIn("reaper.py /usr/bin/app 'a b' 'it'\"'\"'s'", text)
+        self.assertTrue(text.splitlines()[-1].startswith("exec "))
         # sway's activation token must reach the app: it places Qt/Chromium windows
         self.assertNotIn("XDG_ACTIVATION_TOKEN", text)
 
