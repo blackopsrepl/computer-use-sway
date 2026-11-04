@@ -1,0 +1,142 @@
+from __future__ import annotations
+
+import unittest
+
+from computer_use_sway import atspi, core, ocr, query, refs, toolkits
+
+
+class OcrTests(unittest.TestCase):
+    PPM = b"P6\n2 2\n255\n" + bytes([0, 10, 0, 0, 200, 0, 0, 30, 0, 0, 250, 0])
+
+    def test_variants_are_byte_exact(self) -> None:
+        v = ocr.variants(self.PPM)
+        self.assertEqual(v["raw"], self.PPM)
+        self.assertEqual(v["gray"], b"P5 2 2 255\n" + bytes([10, 200, 30, 250]))
+        self.assertEqual(v["gray_inv"], b"P5 2 2 255\n" + bytes([245, 55, 225, 5]))
+        self.assertEqual(len(v["mid"]), len(v["gray"]))
+
+    def test_dedupe_keeps_best(self) -> None:
+        words = [ocr.Word("Save", (0, 0, 40, 10), 70, "raw"), ocr.Word("Save", (2, 1, 40, 10), 90, "gray")]
+        kept = ocr.dedupe(words)
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0].conf, 90)
+
+    def test_lines_and_span_box(self) -> None:
+        words = [ocr.Word(t, (x, 10, w, 20), 90, "raw")
+                 for t, x, w in (("File", 0, 40), ("Save", 50, 40), ("as", 95, 20), ("Export", 125, 60))]
+        lines = ocr.lines(words)
+        self.assertEqual([l.text for l in lines], ["File Save as Export"])
+        (line, box), = ocr.find(lines, "save as")
+        self.assertEqual(box, (50, 10, 65, 20))
+
+    def test_tsv_parsing_filters_low_confidence(self) -> None:
+        tsv = "h\n" + "\t".join(["5", "1", "1", "1", "1", "1", "3", "4", "5", "6", "91", "Go"]) + "\n" \
+              + "\t".join(["5", "1", "1", "1", "1", "2", "3", "4", "5", "6", "20", "xx"])
+        self.assertEqual([w.text for w in ocr.parse_tsv(tsv, "raw")], ["Go"])
+
+
+class QueryTests(unittest.TestCase):
+    def test_role_synonyms(self) -> None:
+        self.assertTrue(query.role_matches("button", "push button"))
+        self.assertTrue(query.role_matches("entry", "text"))
+        self.assertFalse(query.role_matches("button", "label"))
+
+    def test_parse_validates(self) -> None:
+        with self.assertRaises(core.ToolError):
+            query.parse({})
+        with self.assertRaises(core.ToolError):
+            query.parse({"name": "x", "match": "fuzzy"})
+        with self.assertRaises(core.ToolError):
+            query.parse({"name": "(", "match": "regex"})
+        self.assertEqual(query.parse({"role": "button", "nth": 2}).nth, 2)
+
+    def test_text_matches_name_or_text(self) -> None:
+        q = query.parse({"text": "wifi"})
+        self.assertTrue(query.matches(q, "label", "Wi-Fi WIFI", None))
+        self.assertTrue(query.matches(q, "entry", "", "my wifi pass"))
+
+
+class ToolkitTests(unittest.TestCase):
+    def test_classify(self) -> None:
+        cases = [(("gtk", None, "3.24"), "gtk3"), (("GTK", None, None), "gtk4"), (("gtk", None, "4.14"), "gtk4"),
+                 (("Qt", None, None), "qt"), (("Gecko", None, None), "gecko"), (("Chromium", None, None), "chromium"),
+                 ((None, "kitty", None), "terminal"), ((None, "md.obsidian.Obsidian", None), "chromium"),
+                 ((None, "org.gnome.Foo", None), "unknown")]
+        for (name, app_id, version), want in cases:
+            with self.subTest(want=want, app_id=app_id):
+                self.assertEqual(toolkits.classify(name, app_id, toolkit_version=version).name, want)
+
+    def test_learned_single_seat(self) -> None:
+        learned = toolkits.Learned()
+        learned.mark_single_seat("odd.app")
+        self.assertIs(learned.profile(toolkits.PROFILES["unknown"], "odd.app").multi_seat, False)
+        self.assertIsNone(learned.profile(toolkits.PROFILES["unknown"], "other").multi_seat)
+
+
+class FakeNode:
+    def __init__(self, role: str, name: str, states: set[str]) -> None:
+        self.role, self.name, self.states = role, name, states
+
+
+class FakeClient:
+    def __init__(self, node: FakeNode | None) -> None:
+        self._node = node
+
+    def node(self, _ref):
+        if self._node is None:
+            raise core.ToolError("gone")
+        return self._node
+
+
+class RefTests(unittest.TestCase):
+    def element(self) -> refs.Element:
+        return refs.Element(ref="", source="a11y", con_id=1, role="push button", name="Go", a11y=(":1.2", "/o"))
+
+    def test_eviction_and_validation(self) -> None:
+        store = refs.RefStore()
+        snap = store.new_snapshot()
+        ref = store.add(snap, self.element())
+        self.assertEqual(ref, f"s{snap}:1")
+        live = FakeClient(FakeNode("push button", "Go", {"showing"}))
+        self.assertEqual(store.validate(ref, live, lambda e: (1, 2, 3, 4), lambda r: "").bounds, (1, 2, 3, 4))
+        for client in (FakeClient(None), FakeClient(FakeNode("push button", "Stop", {"showing"})),
+                       FakeClient(FakeNode("push button", "Go", set()))):
+            with self.assertRaises(core.ToolError) as caught:
+                store.validate(ref, client, lambda e: None, lambda r: "")
+            self.assertEqual(caught.exception.code, "stale_ref")
+        for _ in range(refs.KEEP_SNAPSHOTS):
+            store.new_snapshot()
+        with self.assertRaises(core.ToolError):
+            store.get(ref)
+
+    def test_ocr_refs_go_stale_when_pixels_change(self) -> None:
+        store = refs.RefStore()
+        snap = store.new_snapshot()
+        el = refs.Element(ref="", source="ocr", con_id=1, role="text", name="Save", region={"x": 0}, region_hash="a")
+        ref = store.add(snap, el)
+        store.validate(ref, None, lambda e: None, lambda r: "a")
+        with self.assertRaises(core.ToolError):
+            store.validate(ref, None, lambda e: None, lambda r: "b")
+
+
+class AtspiTests(unittest.TestCase):
+    def test_state_bits(self) -> None:
+        bits = [(1 << 25) | (1 << 12), 1 << (43 - 32)]
+        self.assertEqual(atspi.states_from(bits), {"showing", "focused", "read_only"})
+
+    def test_invalid_extents(self) -> None:
+        self.assertFalse(atspi.valid_extents((-1, -1, -1, -1)))
+        self.assertFalse(atspi.valid_extents((-2147483648, 0, 1, 1)))
+        self.assertTrue(atspi.valid_extents((0, 0, 10, 10)))
+
+    def test_gecko_zero_nactions_probe_and_synonyms(self) -> None:
+        client = atspi.Client(session_bus=None, a11y_bus=object())
+        client.prop = lambda ref, iface, name: 0
+        client.call = lambda ref, iface, member, sig="", *a: ("press",) if a == (0,) else (_ for _ in ()).throw(
+            core.ToolError("x"))
+        self.assertEqual(client.actions(("a", "/b")), ["press"])
+        self.assertEqual(client.resolve_action(("a", "/b"), "click"), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
