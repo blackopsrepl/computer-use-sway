@@ -1,70 +1,138 @@
 # WIREFRAME.md
 
 This document is the current-state contract for the shipped `computer-use-sway`
-MCP server: its tool surface, its published timeline stream, and its runtime
-files. It describes what exists now, not a roadmap.
+MCP server: its tool surface, modes, agent seat, verdicts, published timeline
+stream and runtime files. It describes what exists now, not a roadmap. The
+evidence for every behaviour below is in `docs/plan-1.0/FINDINGS.md`.
 
 ## Scope
 
-`computer-use-sway` is a single-process MCP stdio server that inspects and operates
-the current Sway session. It is not a recorder: recording and narration live in a
-separate server, `seshat` (<https://github.com/blackopsrepl/seshat>).
+`computer-use-sway` is a single-process MCP stdio server that lets an agent work
+on the current Sway session beside the user. It is not a recorder: recording and
+narration live in a separate server, `seshat` (<https://github.com/blackopsrepl/seshat>).
 
 It does:
 
-- expose screen, window, pointer, keyboard and clipboard tools over MCP stdio
-- recover the session environment (`XDG_RUNTIME_DIR`, `SWAYSOCK`, `WAYLAND_DISPLAY`)
-  when an MCP host launches it with a stripped environment
-- publish every dispatched action to the take timeline stream a recorder reads
+- give the agent its own seat (pointer, keyboard focus, clipboard), its own
+  headless output and its own workspace `cus-agent`, in the user's live session
+- ground targets on structure first: the AT-SPI accessibility tree, then OCR,
+  pixels last
+- deliver each action up a ladder (semantic → agent seat → idle-gated user seat)
+  and return an effect verdict for it
+- recover the session environment (`XDG_RUNTIME_DIR`, `SWAYSOCK`,
+  `WAYLAND_DISPLAY`, the session bus) when an MCP host strips it
+- publish every dispatched call to the take timeline stream a recorder reads
 
 It does not:
 
 - record, encode, narrate or caption anything
-- keep state between sessions, or own a child process beyond a single command
 - embed or call an LLM, or generate narration prose
 - open a network listener
+- paste for text entry (GTK4 and Qt paste the user's clipboard, FINDINGS C2)
 
 ## Protocol Surface
 
-MCP protocol version `2024-11-05`, stdio transport, no notification or resource
-surface. `initialize` returns the server name, version and operating instructions;
-`tools/list` returns the twelve tool schemas; `tools/call` dispatches, and every
-call — success or failure — is published to the timeline stream.
+MCP protocol version `2024-11-05`, stdio transport. `initialize` returns the
+server name, version and operating instructions; `tools/list` returns 19 tool
+schemas with MCP annotations (`readOnlyHint`, `destructiveHint: false`,
+`openWorldHint: false`); `tools/call` dispatches, and every call, success or
+failure, is published to the timeline stream.
 
-Tool errors are returned as MCP tool results with `isError: true` and a specific
-message, never as transport errors. Unexpected exceptions are logged to stderr and
-reported as a generic internal error.
+Tool errors are MCP tool results with `isError: true`, a message and, where it
+helps, a machine code (`no_match`, `stale_ref`, `unknown_ref`, `offscreen`,
+`popup_no_pointer`, `a11y_stalled`, `agent_seat_lost`, …). Unexpected exceptions
+are logged to stderr and reported as a generic internal error.
 
 ## Tool Catalog
 
-Twelve tools: five observation, seven input.
+19 tools: eight semantic, eleven primitive.
 
 | tool | arguments | returns |
 |---|---|---|
-| `screen_info` | none | outputs, seat, focused window, binaries, bounds |
-| `screenshot` | `include_cursor`, `output` (`image`\|`data_url`\|`both`), `save_path`, `region` | PNG as MCP image content, a data URL, or text-only metadata when `save_path` is set |
-| `window_tree` | `include_scratchpad`, `max_depth` | simplified Sway window tree |
-| `focus_window` | exactly one of `con_id`, `app_id`, `class`, `title`; `match` (`exact`\|`contains`\|`regex`) | focused window before, selected, and after |
-| `move_pointer` | `x`, `y`, `mode` (`set`\|`move`) | cursor position |
-| `click` | optional `x`, `y`; `button`, `count`, `interval_ms` | click summary |
-| `drag` | `from`, `to`; `button`, `steps`, `duration_ms` | drag summary |
-| `scroll` | optional `x`, `y`; `direction`, `clicks` | scroll summary |
-| `type_text` | `text`, `delay_ms` | characters typed |
-| `key` | `key`, `modifiers` | key sent |
-| `clipboard_set` | `text` | bytes set |
-| `clipboard_get` | `max_bytes` | clipboard text |
+| `session` | `action` (`status`\|`start`\|`stop`), `mode`, `options` | mode, options, agent output, devices, bus status |
+| `screen_info` | none | outputs (agent output marked), seats, focus, binaries |
+| `observe` | `scope` (`agent`\|`focused`\|`visible`\|`window`), `window`, `query`, `max_elements`, `ocr`, `image` | a numbered scene: one line per element with a ref (`s7:3`), role, name, states, layout box, actions, value/text, `(ocr)` marker |
+| `read` | `ref`, `start`, `length` | the element's full text or value |
+| `act` | `target` (`{ref}`, `{query}` or `{x, y}`), `action`, `text`, `key`, `modifiers`, `value`, `direction`, `clicks`, `to`, `delivery`, `verify` | `delivery`, `effect`, `evidence`, `escalations`, `disturbed_user`, target |
+| `run` | `steps` (`act`, `wait_for`, `assert`, `launch`, `observe`, `key`, `type_text`, `focus_window`), `stop_on`, `timeout_ms`, `observe_after` | per-step results, `ok`, `failed_step`, optional final scene |
+| `wait_for` | `condition` (`element`, `window`, `text`, `pixels_stable`, `user_idle_ms`), `timeout_ms` | `satisfied`, `waited_ms`, detail |
+| `launch` | `argv`, `cwd`, `env`, `timeout_ms`, `a11y` | the new window (on `cus-agent`), profile, flags added |
+| `screenshot` | `window`, `target_output`, `region`, `include_cursor`, `output`, `save_path` | PNG of the user's screen by default; image content, data URL, or a `0600` file |
+| `window_tree` | `include_scratchpad`, `max_depth` | simplified Sway tree |
+| `focus_window` | selector, `seat`, `move_to_agent` | focus before and after |
+| `move_pointer`, `click`, `drag`, `scroll` | coordinates, `seat`, `verify`, gesture arguments | summary and, with `verify`, an effect |
+| `type_text`, `key` | text or key + modifiers, `seat`, `verify` | characters or key sent, effect |
+| `clipboard_set`, `clipboard_get` | text or `max_bytes`, `seat` | bytes set, or the text |
 
-`screenshot` is the only tool that returns image content; `save_path` exists for
-hosts whose per-request image budget makes repeated screenshots unusable.
+`act` actions: `press`, `activate`, `toggle`, `focus`, `set_text`, `type`, `key`,
+`click`, `double_click`, `right_click`, `select`, `set_value`, `scroll`,
+`drag_to`.
 
-### Transport per tool
+`screenshot` is the only tool that returns an image unless `observe` is asked
+for one (`image`). With no `region`, `window` or `target_output` it captures the
+bounding box of the user's outputs; the agent output 100000 px away is captured
+only with `target_output: "agent"`.
 
-Almost every tool is a Sway IPC command. `drag` is the exception: Sway's cursor
-warp accepts a drag's every step and delivers no motion while the button is
-held, so `drag` sends the path through a virtual pointer on `/dev/uinput`
-instead (absolute placement still comes from a warp). That makes `/dev/uinput`
-the one non-command requirement, and its absence disables `drag` alone — see
-README for the udev rule.
+## Modes
+
+| mode | agent input goes to | use |
+|---|---|---|
+| `seat` (default) | the config-declared seat `cus-agent`, its headless output and workspace | normal work beside the user |
+| `user` | seat0, the user's own pointer and keyboard | driving the visible screen, e.g. for a `seshat` recording |
+| `sandbox` | a private nested sway, D-Bus and AT-SPI bus under `$XDG_RUNTIME_DIR/computer-use-sway/sandbox-<pid>-<n>` | tests and the benchmark; never touches the user's session |
+
+Options (`session start`): `foreground` (`idle`\|`always`\|`never`, default
+`idle`), `idle_ms` (1500), `idle_max_wait_ms` (10000), `foreground_pointer`
+(false), `settle_ms` (600), `ocr` (`auto`\|`always`\|`never`).
+
+## Agent Seat
+
+- The seat is declared once in `~/.config/sway/config.d/computer-use-sway.conf`
+  by `computer-use-sway --install-sway-config`; it is never created at runtime
+  (a runtime seat dies on `reload`, FINDINGS S7).
+- Virtual pointer and keyboard are bound to that `wl_seat` over a stdlib
+  Wayland client. GTK3, GTK4, Qt6, Firefox, foot, Alacritty and Ghostty accept
+  them; Chromium, Electron, kitty and WezTerm do not (FINDINGS I5, I7) and are
+  reached semantically or through the foreground step.
+- A detached anchor process (`python -m computer_use_sway.anchor`, one per
+  sway session) holds an idle pointer and keyboard on the agent seat, so the
+  seat's capabilities never drop when the server exits. WezTerm drops the
+  user's keyboard whenever any seat loses one (FINDINGS I7). A sway `reload`
+  still strips the agent seat for a moment, which WezTerm windows open at
+  that time do not survive; that is WezTerm's seat handling and needs a fix
+  there.
+- The agent output is a headless output at x=100000; the user's outputs are
+  pinned at their positions before it is created (FINDINGS O2).
+- Every agent-seat binding is followed by IPC `nop` (FINDINGS O6).
+- `launch` runs the app through the agent seat's launcher binding, keeping the
+  activation token, under a subreaper (`reaper.py`), so its first window maps on
+  `cus-agent` with seat0 focus unchanged (O11). The app's later windows
+  (dialogs, second toplevels) land there too: the server adds sway `assign`
+  criteria for the app's pid and app_id before they map, and moves any window
+  of an agent-launched process that still escapes (O12).
+- After a sway `reload` the server recreates the devices on the agent seat,
+  re-pins outputs and the workspace, and re-adds placement criteria for live
+  agent processes.
+
+## Delivery and Verdicts
+
+Each `act` climbs a ladder and stops at the first rung with an effect:
+
+1. `semantic`: AT-SPI action, `SetTextContents`, `Selection.SelectChild`,
+   `GrabFocus`, `SetCurrentValue`. GTK3 presses go to the pointer first,
+   because GTK3 runs the handler inside `DoAction` and a modal dialog would
+   block the tree (A12). Elements in popup menus have no pointer coordinates and
+   are reached semantically only (A13).
+2. `agent`: the agent seat's devices, for toolkits that accept a second seat.
+3. `foreground`: seat0, only after the user has been idle for `idle_ms`
+   (waiting up to `idle_max_wait_ms`); the user's focus is restored afterwards.
+
+The effect, in order of evidence: `confirmed` (readback shows the intended
+state), `changed` (AT-SPI or Sway events other than focus, or pixels changed
+beyond caret noise), `no_change` (the window looked the same), `unverifiable`
+(no evidence source). `no_change` and `unverifiable` mean not done. A text
+readback that disagrees escalates even when events fired (Gecko,
+FINDINGS A7).
 
 ## Timeline Publication
 
@@ -73,64 +141,61 @@ in a separate process can anchor narration to it:
 
 ```
 $XDG_RUNTIME_DIR/seshat/streams/computer-use-sway.jsonl
-{"at_monotonic": 12345.678, "tool": "click", "ok": true,
- "payload": {"x": 640, "y": 360}, "source": "computer-use-sway"}
+{"at_monotonic": 12345.678, "tool": "act", "ok": true,
+ "payload": {"action": "set_text", "delivery": "semantic", "effect": "confirmed",
+             "characters": 5, "target": {"ref": "s3:2"}}, "source": "computer-use-sway"}
 ```
 
-- `at_monotonic` is CLOCK_MONOTONIC seconds from `time.monotonic()`. The clock is
-  host-wide, so these timestamps are directly comparable with a recorder's own
-  epoch; no handshake or session id is involved.
-- `tool` is the dispatched tool name. `ok` reports whether the call succeeded —
-  a published event records a **dispatch**, never a verified visible effect.
-- `payload` is curated here, by the server that knows what its arguments mean:
-  typed text becomes a character count and clipboard content a byte count, and
-  neither value ever reaches the file.
+- `at_monotonic` is CLOCK_MONOTONIC seconds; the clock is host-wide.
+- `ok` reports whether the call succeeded. A published event records a
+  dispatch, never a verified visible effect; the verdict is inside `payload`.
+- `payload` is curated here: typed and set text becomes `characters`,
+  clipboard content becomes `bytes`, query strings become `name_chars` /
+  `text_chars`, `launch` keeps only the program's basename, and the keys
+  `text`, `value`, `content`, `clipboard`, `password`, `env` and `argv` are
+  dropped at any depth.
 - The stream is truncated once at server startup and appended to while it runs.
-  Publishing is a side channel: a missing runtime directory, an unwritable path
-  or any write error is swallowed, because narration must never be able to break
-  an action.
-- Only the twelve action and observation tools are published; `seshat`'s own
-  recording tools are not this server's business.
-
-The recording lifecycle, narration contract, artifact contract and fallback
-anchors live in `seshat`'s WIREFRAME.md.
+  Publishing is a side channel: any write error is swallowed.
 
 ## Runtime Files
 
-This server writes one file: the timeline stream at
-`$XDG_RUNTIME_DIR/seshat/streams/computer-use-sway.jsonl` (directory `0700`, file
-`0600`), truncated at startup and appended to while the server runs. Screenshots
-written with `save_path` go to the caller's path at mode `0600`.
+All under `$XDG_RUNTIME_DIR` (directories `0700`, files `0600`) unless noted:
 
-Recordings, timeline sidecars, narration work directories and caption files belong
-to `seshat`.
+| path | what |
+|---|---|
+| `seshat/streams/computer-use-sway.jsonl` | the timeline stream |
+| `computer-use-sway/session.json` | agent output name, saved user output positions, creation time |
+| `computer-use-sway/launch/next.sh` | the launcher script the agent's binding runs; rewritten per launch, reset to a no-op after |
+| `computer-use-sway/launch/child.pid` | the launched app's pid, written by the reaper for placement |
+| `computer-use-sway/anchor.pid` | the anchor's pid, under an flock held for its life |
+| `computer-use-sway/sandbox-<pid>-<n>/` | sandbox mode root; teardown removes only this explicit path |
+| `~/.config/sway/config.d/computer-use-sway.conf` | written only by `--install-sway-config` (`0644`) |
+
+Screenshots written with `save_path` go to the caller's path at mode `0600`.
 
 ## Diagnostics And CLI
 
 ```bash
-computer-use-sway --self-test              # environment, binaries, outputs, seat, focus
-computer-use-sway --doctor                 # full JSON report, including the stream path
-computer-use-sway --install-codex-mcp      # register with Codex
-computer-use-sway --uninstall-codex-mcp    # remove the registration
+computer-use-sway --install-sway-config     # one-time: declare the agent seat and bindings
+computer-use-sway --uninstall-sway-config   # remove that file
+computer-use-sway --self-test               # agent seat installed, Wayland globals, OCR, outputs, focus
+computer-use-sway --doctor                  # full JSON report
+computer-use-sway --install-codex-mcp       # register with Codex
+computer-use-sway --uninstall-codex-mcp     # remove the registration
 ```
 
-The dependency check covers what this server uses — `python3`, `swaymsg`, `grim`,
-`wtype`, `wl-copy`, `wl-paste`, plus `codex` for the registration helpers — and
-reports nothing about the recording stack, which it does not touch.
-
-## Error Model
-
-Expected desktop, validation, and missing-capability failures are MCP tool
-results with `isError: true` and a clear text message. Unexpected Python
-exceptions are logged to stderr and returned as a generic internal tool error.
+Required: `sway` (IPC socket) and `grim`. Optional: `tesseract` (OCR),
+`wl-copy`/`wl-paste` (clipboard tools), at-spi2-core (structure; without it
+`observe` falls back to OCR).
 
 ## Documentation Surfaces
 
 Keep these synchronized with shipped behavior:
 
-- `README.md`: public overview, requirements, and workflows.
+- `README.md`: public overview, requirements, quickstart, measured claims.
 - `WIREFRAME.md`: this shipped tool and runtime contract.
-- `docs/architecture.md`: module layout, boundaries, and lifecycle.
+- `docs/architecture.md`: layers, boundaries, and lifecycle.
 - `docs/codex.md`: Codex registration.
 - `AGENTS.md`: repository rules and validation.
 - `skill/solverforge-computer-use/SKILL.md`: agent operating procedure.
+- `docs/plan-1.0/FINDINGS.md`: the measured evidence.

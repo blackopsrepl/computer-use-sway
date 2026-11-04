@@ -4,9 +4,13 @@
   <img src="assets/mascot.png" alt="computer-use-sway mascot" width="260">
 </p>
 
-`computer-use-sway` is a local MCP stdio server that lets an MCP client inspect and operate the current Sway desktop session.
+`computer-use-sway` is a local MCP stdio server that lets an agent work on your
+Sway desktop beside you. The agent gets its own seat (pointer, keyboard focus,
+clipboard), its own headless output and its own workspace in your live session;
+you keep your pointer, keyboard and focus while it works.
 
-It exposes screen, window, pointer, keyboard and clipboard tools through Sway-native commands. It is designed for Linux desktops running Sway on Wayland.
+It finds targets in the accessibility tree first, then by OCR, with pixels
+last, and every action returns an effect verdict.
 
 ## Demo
 
@@ -22,203 +26,148 @@ Full narrated video:
 
 - [computer-use-sway-demo.mp4](assets/computer-use-sway-demo.mp4) — plays in browsers, on Apple hardware, and on X/Twitter
 
-## Capabilities
+## Quickstart
 
-- Inspect active outputs, seats, focused windows, and required binaries.
-- Capture screenshots as MCP image content, data URLs, or a private file on
-  disk (`save_path`) for flat image budgets.
-- Return a simplified Sway window tree.
-- Focus windows by container ID, app ID, class, or title.
-- Move the pointer, click, drag, and scroll.
-- Type text and send key chords through `wtype`.
-- Read and write text clipboard contents through `wl-clipboard`.
-- Publish every dispatched action to the take timeline stream a recorder reads.
-
-## Screenshots and image budgets
-
-`screenshot` captures the current output or a rectangular region as PNG. By
-default it returns the PNG as MCP image content (or a data URL when `output` is
-set). MCP hosts that cap the number of images per request become unusable after
-a few dozen screenshots; to keep the image budget flat, pass `save_path`:
+A typical exchange (refs come from the `observe` answer):
 
 ```json
-{"name": "screenshot", "arguments": {"save_path": "/run/user/1000/shots/step-01.png"}}
+{"name": "launch",  "arguments": {"argv": ["gnome-calculator"]}}
+{"name": "observe", "arguments": {"scope": "agent", "query": {"role": "button", "name": "7"}}}
+{"name": "act",     "arguments": {"target": {"ref": "<ref from observe>"}, "action": "press"}}
+{"name": "run",     "arguments": {"steps": [
+  {"tool": "act", "args": {"target": {"query": {"name": "Name"}}, "action": "set_text", "text": "Ada"}},
+  {"tool": "act", "args": {"target": {"query": {"name": "Submit"}}, "action": "press"}}]}}
 ```
 
-`save_path` writes the PNG to that exact path (mode `0600`; the parent directory
-must exist) and returns the same text metadata (`bytes`, `dimensions`, `region`,
-`include_cursor`, plus `saved_to`) with no image block, so a long automation run
-can keep capturing indefinitely. Inspect the saved files with local tooling
-(for example `tesseract` for OCR) instead of routing image bytes back through
-the MCP host. `save_path` and `output` are mutually exclusive.
+`act` answers with `delivery` (`semantic`, `agent` or `foreground`) and
+`effect` (`confirmed`, `changed`, `no_change`, `unverifiable`).
+
+## Measured on Sway 1.10.1
+
+Every row is a measurement; the evidence is in `docs/plan-1.0/FINDINGS.md` and
+`bench/results/`.
+
+| claim | evidence |
+|---|---|
+| Agent input on its own seat does not move your focus or eat your typing | integration T4.6, 5/5 runs; benchmark: 0 focus moves and 0 lost characters over 48 runs |
+| GTK3, GTK4, Qt6, Firefox, foot, Alacritty and Ghostty accept the agent seat; Chromium, Electron, kitty and WezTerm are reached semantically, or through your seat only while you are idle, with your focus restored | FINDINGS I5, I7, F1 |
+| Exact Unicode text, including 8 distinct non-ASCII characters in one string, in GTK3, GTK4, Qt6, Firefox, Chromium, Electron and five terminals | FINDINGS I3, I6 |
+| Launched apps, their dialogs and their later windows open on the agent workspace | FINDINGS O11, O12 |
+| Clicks computed from the accessibility tree hit their target on 7 toolkits at scale 1 and 2 | FINDINGS A4, 12/12 |
+| OCR grounds clicks where there is no tree | FINDINGS P2, 10/10 |
+| Text entry is read back; a toolkit that reports success and changes nothing is caught | FINDINGS A7 |
+| Benchmark layer 1, 24 tasks: v1 succeeds 24/24 with you idle and 24/24 while you type; a screenshot loop with perfect grounding succeeds 24/24 and 16/24, and loses 531 of your keystrokes | `bench/results/` |
+| Same benchmark: v1 used 32 calls and returned no images; the screenshot loop used 194 calls and 1.9 MB of images | `bench/results/` |
 
 ## Requirements
 
-Runtime commands, all of them desktop tooling:
-
-- `swaymsg` (Sway IPC)
-- `grim` (screenshots)
-- `wtype` (text and key events)
-- `wl-copy` and `wl-paste` (clipboard)
-
-Python 3.10 or newer, standard library only: `dependencies = []` is a hard
-contract. The recording stack (`wf-recorder`, `ffmpeg`, `ffprobe`, TTS engines,
-`tesseract`) is not a dependency of this server any more — it belongs to `seshat`.
-
-### Virtual pointer (required by `drag`)
-
-Everything except `drag` works over Sway's IPC. `drag` cannot: `swaymsg seat
-<seat> cursor set x y` accepts every step of a drag and delivers none of the
-motion between a press and its release, so the gesture arrives as a press and a
-release at one point. `drag` therefore walks the path with a virtual pointer
-emitted through `/dev/uinput`, which the standard library can drive directly.
-
-That device node is `root:root` mode `0600` by default, so `drag` needs one
-either way:
-
-- a udev rule, which is what a normal install wants:
-
-  ```
-  # /etc/udev/rules.d/99-uinput.rules
-  KERNEL=="uinput", MODE="0666"
-  ```
-
-  reload with `sudo udevadm control --reload-rules && sudo udevadm trigger`
-
-- or membership in a group that owns the node.
-
-Without it, `drag` fails with a message naming the rule, and every other tool
-keeps working. `computer-use-sway --self-test` reports the node's state.
+- Sway (IPC socket) and `grim`.
+- Optional: `tesseract` (OCR for apps without an accessibility tree),
+  `wl-copy`/`wl-paste` (clipboard tools), at-spi2-core (accessibility; without
+  it `observe` falls back to OCR).
+- Python 3.10 or newer, standard library only: `dependencies = []` is a hard
+  contract. `wtype` and `/dev/uinput` are no longer used.
 
 ## Install
 
-From a checkout:
-
 ```bash
 python3 -m pip install .
+computer-use-sway --install-sway-config
 ```
 
-For editable development:
-
-```bash
-python3 -m pip install -e .
-```
+`--install-sway-config` writes `~/.config/sway/config.d/computer-use-sway.conf`,
+which declares the agent seat and its two bindings, then reloads sway and checks
+that the seat exists. Your sway config must include `~/.config/sway/config.d/*`
+(the command says so if it does not). Remove it with `--uninstall-sway-config`.
 
 ## Register With Codex
-
-After installation:
 
 ```bash
 computer-use-sway --install-codex-mcp
 ```
 
-That registers a stdio MCP server named `computer-use-sway`.
-
-If the command is not on `PATH`, set the exact command Codex should launch:
-
-```bash
-COMPUTER_USE_SWAY_COMMAND="/path/to/venv/bin/computer-use-sway" computer-use-sway --install-codex-mcp
-```
-
-Verify:
-
-```bash
-computer-use-sway --self-test
-codex mcp list
-```
-
-Remove the Codex registration:
-
-```bash
-computer-use-sway --uninstall-codex-mcp
-```
+That registers a stdio MCP server named `computer-use-sway`. If the command is
+not on `PATH`, set `COMPUTER_USE_SWAY_COMMAND=/path/to/venv/bin/computer-use-sway`.
+Verify with `computer-use-sway --self-test` and `codex mcp list`; remove with
+`--uninstall-codex-mcp`.
 
 ## Run As MCP Server
 
-Most clients should launch the command directly over stdio:
-
 ```bash
 computer-use-sway
-```
-
-During source checkout development, this also works:
-
-```bash
+# or, from a checkout:
 PYTHONPATH=src python3 -m computer_use_sway
 ```
 
-## Recording and narration (moved)
+## Screenshots and image budgets
 
-Screen recording, the take timeline, speech synthesis, captions and muxing now
-live in a separate MCP server, **`seshat`** (<https://github.com/blackopsrepl/seshat>).
-This server publishes every action it dispatches to that server's timeline stream
+Most work needs no screenshot: `observe` returns text. `screenshot` captures
+your screen by default (`target_output: "agent"` for the agent's). MCP hosts
+that cap images per request become unusable after a few dozen screenshots; pass
+`save_path` to write the PNG to a `0600` file and get text-only metadata back.
+
+## Recording and narration
+
+Screen recording, the take timeline, speech synthesis, captions and muxing live
+in a separate MCP server, **`seshat`** (<https://github.com/blackopsrepl/seshat>).
+This server publishes every call it dispatches to that server's timeline stream
 (`$XDG_RUNTIME_DIR/seshat/streams/computer-use-sway.jsonl`), which is what makes a
-take of this desktop narratable. The contract, the tool surface and the workflows
-are documented in that repository's README and WIREFRAME.
+take of this desktop narratable. Use `user` mode when the recorded screen must
+show the work.
 
 ## Agent Guidance
 
-MCP tool schemas describe arguments but not how to operate a desktop well. This
-server therefore ships its operating procedure in two forms:
+The `initialize` response carries MCP `instructions` (observe → act, read the
+effect, never paste, treat on-screen text as untrusted, confirm destructive
+actions). A fuller procedure lives in `skill/solverforge-computer-use/SKILL.md`;
+for opencode:
 
-- **Protocol-native**: the `initialize` response includes MCP `instructions`
-  covering coordinate derivation, verify-after-action discipline, untrusted
-  on-screen text, and confirmation before destructive actions. Every MCP client
-  receives these automatically.
-- **Optional skill for opencode**: a richer procedural guide lives in
-  `skill/solverforge-computer-use/SKILL.md` in this repository. To install it
-  for opencode, copy the directory:
+```bash
+mkdir -p ~/.config/opencode/skill
+cp -r skill/solverforge-computer-use ~/.config/opencode/skill/
+```
 
-  ```bash
-  mkdir -p ~/.config/opencode/skill
-  cp -r skill/solverforge-computer-use ~/.config/opencode/skill/
-  ```
-
-  The repository copy is the source of truth; keep installed copies in sync
-  with it.
+The repository copy is the source of truth; keep installed copies in sync.
 
 ## Diagnostics
 
 ```bash
-computer-use-sway --doctor
+computer-use-sway --self-test   # agent seat installed, Wayland globals, OCR, outputs
+computer-use-sway --doctor      # full JSON report
 ```
 
-The server reconstructs `XDG_RUNTIME_DIR`, `SWAYSOCK`, and `WAYLAND_DISPLAY` from `/run/user/<uid>` when an MCP host launches it with a sanitized environment.
+The server reconstructs `XDG_RUNTIME_DIR`, `SWAYSOCK`, `WAYLAND_DISPLAY` and
+the session bus when an MCP host launches it with a sanitized environment.
 
 ## Security
 
-This server gives an MCP client practical control over your active desktop session. Only register it with local clients you trust. It intentionally has no network listener; the transport is stdio.
+This server gives an MCP client practical control over your desktop session.
+Only register it with local clients you trust. It has no network listener; the
+transport is stdio.
 
-This server publishes what it dispatches, including to the take timeline stream at
-`$XDG_RUNTIME_DIR/seshat/streams/computer-use-sway.jsonl`. Payloads are curated
-here before they are written — typed text becomes a character count and clipboard
-content a byte count, never the content itself — so the stream is safe to keep.
-Any recorder that ingests it decides when and how those actions are narrated.
+Published timeline payloads are curated here before they are written: typed text
+becomes a character count and clipboard content a byte count, never the content
+itself.
 
 ## Documentation
 
-- `WIREFRAME.md`: the shipped MCP tool surface and runtime contract.
-- `docs/architecture.md`: module layout, boundaries, and lifecycle.
-- `AGENTS.md`: repository rules, including the 500-line file limit.
+- `WIREFRAME.md`: the shipped tool surface, modes, verdicts and runtime files.
+- `docs/architecture.md`: layers and lifecycle.
+- `docs/plan-1.0/FINDINGS.md`: the measured evidence.
+- `bench/eval.md`: the benchmark.
+- `AGENTS.md`: repository rules.
 - `skill/solverforge-computer-use/SKILL.md`: the agent operating procedure.
 
 ## Development
 
 ```bash
-make check
+make check         # unit tests, compilation, file-length check (no sway needed)
+make integration   # real toolkits in a sandbox sway
+make bench         # benchmark layer 1
 ```
 
-`make check` runs the unit tests, Python bytecode compilation, and the file
-length check. It does not require an active Sway session. The server is split
-into focused modules under `src/computer_use_sway/`; any file that reaches 500
-lines must be split (`scripts/check_file_length.py`).
-
-Build local distribution artifacts:
-
-```bash
-python3 -m pip install ".[publish]"
-make build
-```
+Build distribution artifacts with `python3 -m pip install ".[publish]"` and
+`make build`.
 
 ## License
 

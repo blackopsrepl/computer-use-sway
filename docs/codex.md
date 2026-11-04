@@ -4,7 +4,12 @@ Install the package first:
 
 ```bash
 python3 -m pip install .
+computer-use-sway --install-sway-config
 ```
+
+The server gives the agent its own Sway seat and workspace beside you, grounds
+targets on the accessibility tree first, and returns an effect verdict for every
+action (see `WIREFRAME.md`). The second command declares that seat once.
 
 Register:
 

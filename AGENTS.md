@@ -18,24 +18,41 @@ Guidance for coding agents working in this repository.
   call to the take timeline stream a recorder reads; keep that hook intact. A
   published event means a call was *dispatched* — never that the action had its
   intended visible effect.
-- The stream is the only file this server writes, and its payloads are curated
-  here before they are written: typed text becomes a character count, clipboard
+- Outside its own runtime directory (`$XDG_RUNTIME_DIR/computer-use-sway/`:
+  launcher, pid files, captures) the stream is the only file this server
+  writes, besides the opt-in `--install-sway-config` drop-in and a
+  caller-given `save_path`. Stream payloads are curated here before they are
+  written: typed text becomes a character count, clipboard
   content becomes a byte count, and neither value ever reaches the file.
 - Publishing is a side channel: a missing runtime directory or any write error is
   swallowed, because narration must never be able to break an action.
+- The agent works on its own config-declared seat, output and workspace beside
+  the user. Input on the user's seat (the foreground rung) happens only while
+  the user is idle, and their focus is restored. Every `act` returns an effect
+  verdict; never report an action as done without one.
+- Tests never touch the user's live session: integration tests and the bench
+  run in sandbox sways with a private runtime directory and buses.
 
 ## Project Structure
 
-- `src/computer_use_sway/core.py`: tool errors, subprocess execution, session
-  environment recovery, and strict parsing helpers.
-- `desktop.py`: Sway output, seat, tree, window, coordinate, and cursor helpers.
-- `timeline.py`: the published timeline stream — payload curation, stream path,
-  startup truncation, and `append_event`.
-- `tools.py` / `specs.py`: MCP tool wrappers and JSON schemas.
-- `server.py`: MCP protocol loop, the publishing `tools/call` dispatch, and the
-  CLI facade.
-- `version.py`: server name and version.
-- `tests/`: deterministic unit tests.
+Layers in `src/computer_use_sway/` (dependencies point down; details in
+`docs/architecture.md`):
+
+- transports: `swayipc.py`, `wire.py`, `keymap.py`, `vinput.py`, `dbus.py`.
+- desktop: `core.py` (errors, subprocesses, environment recovery), `desktop.py`,
+  `geometry.py`, `capture.py`.
+- agent: `install.py`, `agent.py`, `anchor.py`, `placement.py`, `sentinel.py`,
+  `session.py`, `sandbox.py`, `reaper.py`.
+- perception: `atspi.py`, `toolkits.py`, `ocr.py`, `query.py`, `refs.py`,
+  `scene.py`.
+- action: `actions.py`, `actions_delivery.py`, `verify.py`, `launch.py`,
+  `waits.py`, `plans.py`.
+- surface: `tools*.py` / `specs*.py` (MCP tools and schemas), `server.py` (the
+  protocol loop and the publishing `tools/call` dispatch), `cli.py`,
+  `timeline.py` (payload curation and the stream), `version.py`.
+- `tests/`: deterministic unit tests; `tests/integration/`: sandbox-sway
+  suites; `bench/`: the benchmark; `docs/plan-1.0/`: the plan, the measured
+  FINDINGS every design choice cites, and the spikes that measured them.
 
 ## Engineering Rules
 
@@ -54,10 +71,14 @@ Guidance for coding agents working in this repository.
 Run:
 
 ```bash
-make check
+make check        # unit tests, bytecode compilation, file-length check
+make integration  # sandbox sways: needs sway, grim, tesseract, at-spi2-core and the test apps
+make bench        # benchmark layer 1; its gate must report "gate: ok"
 ```
 
-That runs the unit tests, bytecode compilation, and the file-length check.
+`make check` gates every commit. `make integration` and `make bench` gate a
+release and any change to delivery, perception or the agent seat. A design
+claim belongs in `docs/plan-1.0/FINDINGS.md` with the test that measures it.
 
 ## Documentation Surfaces
 

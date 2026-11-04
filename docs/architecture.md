@@ -1,66 +1,74 @@
 # Architecture
 
-`computer-use-sway` is a single-process MCP stdio server. It keeps no state between sessions and owns no long-lived child process: it runs one command, reads the result, publishes the call to the timeline stream, and forgets it.
+`computer-use-sway` is a single-process MCP stdio server, standard library only.
+It talks to Sway over the IPC socket, to Wayland over its own wire client, and
+to AT-SPI over its own D-Bus client; the only external programs it runs are
+`grim`, `tesseract` and `wl-clipboard`. The measured facts behind every design
+choice are in `docs/plan-1.0/FINDINGS.md`; the full design is
+`docs/plan-1.0/ARCHITECTURE.md`.
 
-## Boundaries
+## Layers
 
-- MCP transport: JSON-RPC messages over stdin/stdout.
-- Desktop backend: Sway IPC through `swaymsg`.
-- Screenshots: `grim` returns PNG bytes; by default they become MCP image
-  content, or `save_path` writes them to a `0600` file and returns text-only
-  metadata so long runs do not exhaust a host's per-request image budget.
-- Input: pointer actions use Sway seat cursor commands; text and key events use `wtype`.
-  `drag` is the one exception: a warp cannot move the pointer under a held
-  button, so its path is emitted by a virtual pointer on `/dev/uinput` after the
-  warp places the pointer exactly (`pointer.py`).
-- Clipboard: text-only set/get through `wl-copy` and `wl-paste`.
-- Timeline: every dispatched call is appended to
-  `$XDG_RUNTIME_DIR/seshat/streams/computer-use-sway.jsonl` with an `at_monotonic`
-  timestamp, so a recorder in another process can anchor narration to real
-  actions. This server owns no recording state and never writes a take.
+| layer | modules | role |
+|---|---|---|
+| transports | `swayipc`, `wire`, `keymap`, `vinput`, `dbus` | Sway IPC with an event subscription; a Wayland client for virtual pointer/keyboard and the idle notifier; a D-Bus client for AT-SPI |
+| desktop | `core`, `desktop`, `geometry`, `capture` | errors, environment recovery, the Sway tree, coordinates, grim captures and change detection |
+| agent | `install`, `agent`, `anchor`, `placement`, `sentinel`, `session`, `sandbox`, `reaper` | the config-declared agent seat, its output and workspace, the seat anchor, window placement, the user's focus/idle sentinel, modes, the test sandbox |
+| perception | `atspi`, `toolkits`, `ocr`, `query`, `refs`, `scene` | the accessibility tree, measured toolkit profiles, the OCR ensemble, queries, refs and their validation, the rendered scene |
+| action | `actions`, `actions_delivery`, `verify`, `launch`, `waits`, `plans` | the delivery ladder, verdicts, launching, waits and multi-step runs |
+| surface | `tools*`, `specs*`, `server`, `cli`, `timeline`, `version` | MCP tools and schemas, the protocol loop, the CLI, the timeline stream |
+
+Dependencies point down the table only. Every file stays under 500 lines
+(`scripts/check_file_length.py`).
+
+## Lifecycle
+
+1. The first call that needs the desktop starts the session in `seat` mode
+   (or the mode `session start` asked for). The agent pins the user's outputs,
+   creates the headless output at x=100000, renames its workspace to
+   `cus-agent`, makes sure the anchor process runs, and creates virtual
+   devices on the config-declared seat.
+2. `observe` walks the AT-SPI tree of each window in scope, maps extents to
+   layout points, adds OCR words where the tree is thin, and numbers everything
+   as refs of one snapshot.
+3. `act` resolves the target (ref, query or point), validates the ref, climbs
+   the delivery ladder, and returns the verdict computed from readback,
+   AT-SPI events, Sway events and pixels.
+4. `launch` writes the launcher script, fires the agent's launcher binding,
+   registers the reported child pid for placement, and waits for the window.
+5. A sway `reload` marks the agent stale; the next call recreates the devices,
+   re-pins the layout and re-adds placement criteria.
+6. On exit the agent output is unplugged and the devices destroyed; the
+   anchor keeps its idle pointer and keyboard on the agent seat until sway
+   exits, because WezTerm drops the user's keyboard whenever any seat loses
+   one (FINDINGS I7). A sandbox removes only its own root.
+
+## Threads
+
+The main thread runs the MCP loop and owns the Wayland connection and the
+AT-SPI client. One reader thread follows the Sway event subscription and feeds
+the event log; its listeners (placement) issue IPC commands only. Nothing else
+runs concurrently in the server; the anchor is a separate detached process
+(`python -m computer_use_sway.anchor`, one per runtime directory under an
+flock).
 
 ## Environment Recovery
 
-MCP hosts often launch stdio servers with a stripped environment. Before talking to Sway, the server reconstructs:
-
-- `XDG_RUNTIME_DIR` as `/run/user/<uid>` when available.
-- `SWAYSOCK` from the newest Sway IPC socket in that runtime dir.
-- `WAYLAND_DISPLAY` from the newest Wayland socket in that runtime dir.
-
-This lets a fresh MCP host reach the current desktop session without shell-specific launch wrappers.
+MCP hosts often launch stdio servers with a stripped environment. Before talking
+to Sway the server reconstructs `XDG_RUNTIME_DIR` (`/run/user/<uid>`),
+`SWAYSOCK` and `WAYLAND_DISPLAY` (the newest sockets there) and the session bus
+address.
 
 ## Recording, Narration, And The Stream
 
-Screen recording, the take timeline, speech synthesis, captions and muxing now
-live in a separate MCP server, **`seshat`** (<https://github.com/blackopsrepl/seshat>).
-This server publishes every action it dispatches to that server's timeline stream
-(`$XDG_RUNTIME_DIR/seshat/streams/computer-use-sway.jsonl`), which is what makes a
-take of this desktop narratable. The contract, the tool surface and the workflows
-are documented in that repository's README and WIREFRAME.
-
-## Module Layout
-
-- `core.py`: tool errors, subprocess execution, session environment recovery, and
-  strict parsing helpers. Imports nothing from the package.
-- `desktop.py`: Sway output, seat, tree, window, coordinate and cursor helpers.
-  Depends on `core`.
-- `pointer.py`: the virtual pointer that makes a real drag possible, plus the
-  path walk and the requirement check for `/dev/uinput`. Depends on `core`.
-- `timeline.py`: the published timeline stream — the curated payload rules, the
-  stream path, startup truncation, and `append_event`. Depends on the standard
-  library only, so publishing can never fail into a tool call.
-- `tools.py`: the twelve MCP tool wrappers. Depends on `core`, `desktop`, `pointer`.
-- `specs.py`: JSON schemas for that surface. Depends on `core`.
-- `server.py`: MCP protocol loop, the `tools/call` dispatch that publishes every
-  call, and the CLI facade (`--self-test`, `--doctor`, Codex registration).
-- `version.py`: server name and version, imported by both the CLI and the tools.
-- `tests/`: deterministic unit tests for the tool layer, the protocol surface and
-  the published stream.
-
-Dependency direction is one-way: `core` → `desktop`/`timeline` → `tools` → `specs`
-/ `server`. Nothing here imports the recording stack, because this server no
-longer has one.
+Screen recording, the take timeline, speech synthesis, captions and muxing live
+in a separate MCP server, **`seshat`** (<https://github.com/blackopsrepl/seshat>).
+This server publishes every call it dispatches to that server's timeline stream
+(`$XDG_RUNTIME_DIR/seshat/streams/computer-use-sway.jsonl`) with curated
+payloads; the verdict of an `act` travels inside `payload`.
 
 ## Tool Error Model
 
-Expected desktop and validation failures are reported as MCP tool results with `isError: true`. Unexpected Python exceptions are logged to stderr and returned as a generic internal tool error.
+Expected desktop and validation failures are MCP tool results with
+`isError: true`, a message and a code. Unexpected Python exceptions are logged
+to stderr and returned as a generic internal tool error.
