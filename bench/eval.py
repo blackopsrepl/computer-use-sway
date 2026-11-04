@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from computer_use_sway import desktop, sandbox
+from computer_use_sway import desktop, sandbox, vinput, wire
 
 from .run import APP, PY, ROOT, TASKS, dump
 
@@ -59,7 +59,9 @@ def run_one(task: dict[str, Any], arm: str, args: argparse.Namespace) -> dict[st
         box.spawn([PY, APP, task["family"], task["param"], str(work / "app.jsonl")])
         saved = {k: os.environ.get(k) for k in box.env}
         os.environ.update(box.env)
+        hardware = None
         try:
+            hardware = user_hardware()
             deadline = time.monotonic() + 20
             while not any((w.get("name") or "").startswith("B:") for w in desktop.all_windows()):
                 if time.monotonic() > deadline:
@@ -97,13 +99,30 @@ def run_one(task: dict[str, Any], arm: str, args: argparse.Namespace) -> dict[st
                 "images": sum(c["images"] for c in calls), "image_bytes": sum(c["image_bytes"] for c in calls),
                 "response_bytes": sum(c["bytes"] for c in calls),
                 "agent_error": bool(report.get("is_error")),
+                # what the agent said it did, against what the oracle shows
+                "agent_said": str(report.get("result") or "")[-400:],
+                "tools_used": sorted({c.get("tool") for c in calls if c.get("tool")}),
             }
         finally:
+            if hardware is not None:
+                hardware[1].destroy()
+                hardware[0].close()
             for key, value in saved.items():
                 if value is None:
                     os.environ.pop(key, None)
                 else:
                     os.environ[key] = value
+
+
+def user_hardware() -> tuple[Any, Any]:
+    """An idle pointer and keyboard on seat0, as a real session has. A
+    headless sway starts with none; 0.3.2's input (sway cursor commands and
+    wtype) then lost clicks and keystrokes, which no user's desktop would."""
+    conn = wire.Connection()
+    devices = vinput.SeatDevices(conn, "seat0", extent=desktop.layout_extent)
+    devices.keyboard.chord("Shift_L")
+    devices.pointer.move_to(5, 5)
+    return conn, devices
 
 
 def saved_env(saved: dict[str, str | None]) -> dict[str, str]:

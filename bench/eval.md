@@ -36,6 +36,12 @@ swaps only the server:
 | `v0.3.2` | this server at tag v0.3.2 (`CUS_LEGACY_TREE=<git worktree>`) |
 | `cua` | `cua-driver mcp` at the newest stable release, `CUA_DRIVER_RS_ENABLE_WAYLAND=1` (`--cua <path>`) |
 
+Each sandbox gets an idle pointer and keyboard on seat0 before the agent
+starts, as a real session has its hardware; without them 0.3.2's sway cursor
+commands and wtype lost input that no user's desktop would lose. Every row
+records the agent's last words and the tools it used, next to what the
+oracle shows.
+
 Every server is wrapped in `bench/mcp_meter.py`, which counts tool calls,
 images, image bytes and response bytes the same way for each arm. The agent's
 own report gives turns, tokens, cost and wall time. Success is the bench app's
