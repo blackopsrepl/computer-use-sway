@@ -57,3 +57,19 @@ PYTHONPATH=src CUS_LEGACY_TREE=/tmp/cus-0.3.2 \
 Same agent, prompt, tasks and sandbox for every arm, so the comparison is
 between tool surfaces, not between agents. Public "exceeds" claims cite a
 layer-2 result file.
+
+## Result, 2026-11-04 (`bench/results/eval-2026-11-04T231112.json`)
+
+Claude Code (default model), one run per task and arm, 24 tasks.
+
+| arm | success | turns | tokens | cost | wall | calls | images | image bytes |
+|---|---|---|---|---|---|---|---|---|
+| v1 | 24/24 | 228 | 1.86 M | $2.08 | 295 s | 204 | 30 | 0.33 MB |
+| v0.3.2 | 24/24 | 453 | 2.71 M | $3.86 | 533 s | 429 | 166 | 1.86 MB |
+| cua-driver 0.38.0 | 24/24 | 192 | 9.67 M | $4.44 | 490 s | 168 | 90 | 2.62 MB |
+
+Every arm completes every task. v1 does it with the fewest tokens, the lowest
+cost, the least time and the fewest images; cua-driver with the fewest calls
+and turns. No user is active in layer 2, so disturbance is measured only by
+layer 1.
+

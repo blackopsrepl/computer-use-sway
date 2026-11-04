@@ -58,6 +58,7 @@ Every row is a measurement; the evidence is in `docs/plan-1.0/FINDINGS.md` and
 | Text entry is read back; a toolkit that reports success and changes nothing is caught | FINDINGS A7 |
 | Benchmark layer 1, 24 tasks: v1 succeeds 24/24 with you idle and 24/24 while you type; a screenshot loop with perfect grounding succeeds 24/24 and 16/24, and loses 531 of your keystrokes | `bench/results/` |
 | Same benchmark: v1 used 32 calls and returned no images; the screenshot loop used 194 calls and 1.9 MB of images | `bench/results/` |
+| Benchmark layer 2, Claude Code driving each server on the same 24 tasks: all three succeed 24/24. v1 used 1.86 M tokens, $2.08, 295 s and 30 images; 0.3.2 used 2.71 M tokens, $3.86, 533 s and 166 images; cua-driver 0.38.0 used 9.67 M tokens, $4.44, 490 s and 90 images. cua-driver made the fewest calls (168, v1 204, 0.3.2 429). Layer 2 has no active user, so it does not measure disturbance; layer 1 does | `bench/results/eval-2026-11-04T231112.json` |
 
 ## Requirements
 
