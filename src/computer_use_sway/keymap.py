@@ -3,8 +3,10 @@
 The keymap is the real evdev keycode set with a US layout, so ASCII goes out
 on the physical key a real keyboard would use (with a real Shift press), and
 apps that look at key codes behave normally. Any other keysym (non-ASCII
-text, rare function keys, the agent's private binding keys) gets a private
-keycode above the evdev range.
+text, F13-F24, the agent's private binding keys) is bound to one of twelve
+slots on the F13-F24 keys. The slots must sit below xkb keycode 256:
+Chromium and Electron silently drop key events with higher codes, which lost
+every non-ASCII character typed into them (measured).
 """
 
 from __future__ import annotations
@@ -29,8 +31,6 @@ NAMED: dict[str, int] = {
     "Caps_Lock": 58, "Num_Lock": 69, "Scroll_Lock": 70,
     "F1": 59, "F2": 60, "F3": 61, "F4": 62, "F5": 63, "F6": 64, "F7": 65, "F8": 66,
     "F9": 67, "F10": 68, "F11": 87, "F12": 88,
-    "F13": 183, "F14": 184, "F15": 185, "F16": 186, "F17": 187, "F18": 188,
-    "F19": 189, "F20": 190, "F21": 191, "F22": 192, "F23": 193, "F24": 194,
     "KP_Enter": 96, "Print": 99, "Pause": 119,
     "Home": 102, "Up": 103, "Prior": 104, "Left": 105, "Right": 106, "End": 107,
     "Down": 108, "Next": 109, "Insert": 110, "Delete": 111, "Menu": 127,
@@ -41,7 +41,8 @@ MOD_KEYS = {"shift": 42, "ctrl": 29, "alt": 56, "logo": 125}
 # state from a virtual keyboard's key events, so the client sends this mask
 # with zwp_virtual_keyboard_v1.modifiers around every modified key.
 MOD_MASK = {"shift": 1, "ctrl": 4, "alt": 8, "logo": 64}
-PRIVATE_BASE = 600  # evdev codes >= 600 are unassigned; xkb code = evdev + 8
+# (evdev code, xkb key name) of the slots; xkb code = evdev + 8.
+SLOTS = [(183 + i, f"FK{13 + i}") for i in range(12)]
 FOCUS_KEY = "XF86Macro27"
 LAUNCH_KEY = "XF86Macro29"
 AGENT_KEYSYMS = (FOCUS_KEY, LAUNCH_KEY)
@@ -88,7 +89,9 @@ def normalize_key(name: str) -> str:
     return name
 
 
-def build_keymap(private: list[str]) -> bytes:
-    codes = " ".join(f"<P{i}> = {PRIVATE_BASE + i + 8};" for i in range(len(private)))
-    syms = " ".join(f"key <P{i}> {{[ {sym} ]}};" for i, sym in enumerate(private))
-    return (KEYMAP_TEMPLATE % (codes, syms)).encode("utf-8") + b"\0"
+def build_keymap(slots: list[str | None]) -> bytes:
+    """Keymap with slot i bound to keysym slots[i] (None leaves the slot empty)."""
+    syms = " ".join(
+        f"key <{SLOTS[i][1]}> {{[ {sym} ]}};" for i, sym in enumerate(slots) if sym is not None
+    )
+    return (KEYMAP_TEMPLATE % ("", syms)).encode("utf-8") + b"\0"

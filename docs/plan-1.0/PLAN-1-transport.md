@@ -191,10 +191,10 @@ US: dict[str, tuple[int, bool]]        # char -> (evdev code, needs_shift)
 NAMED: dict[str, int]                  # keysym name -> evdev code
 MOD_KEYS: dict[str, int]               # "shift","ctrl","alt","logo" -> evdev code
 MOD_MASK: dict[str, int]               # "shift":1,"ctrl":4,"alt":8,"logo":64   [I4]
-PRIVATE_BASE = 600
+SLOTS = [(183 + i, f"FK{13 + i}") for i in range(12)]   # F13-F24; must stay < xkb 256 [I3]
 AGENT_KEYSYMS = ("XF86Macro27", "XF86Macro29")   # binding keys [S6, O9]
 def keysym_for_char(ch: str) -> str    # " "->space, "\n"->Return, "\t"->Tab, ASCII printable->itself, else "U%04X"
-def build_keymap(private: list[str]) -> bytes    # NUL-terminated xkb text
+def build_keymap(slots: list[str | None]) -> bytes  # NUL-terminated xkb text; LRU slot rebinding in vinput
 def normalize_key(name: str) -> str    # tool-level names -> keysym: "enter"->"Return", "esc"->"Escape", "backspace"->"BackSpace", "pageup"->"Prior", "pagedown"->"Next", "del"->"Delete"; single char -> itself; otherwise unchanged
 ```
 

@@ -5,6 +5,7 @@ import socket
 import struct
 import threading
 import unittest
+import unittest.mock
 
 from computer_use_sway import core, dbus, keymap, swayipc, wire
 
@@ -53,11 +54,49 @@ class KeymapTests(unittest.TestCase):
         self.assertEqual(keymap.normalize_key("f5"), "F5")
         self.assertEqual(keymap.normalize_key("PageDown"), "Next")
 
-    def test_private_keys_in_generated_keymap(self) -> None:
-        text = keymap.build_keymap(["XF86Macro27", "U00E9"]).decode()
-        self.assertIn("<P0> = 608;", text)
-        self.assertIn("key <P1> {[ U00E9 ]};", text)
+    def test_slots_are_low_keycodes(self) -> None:
+        text = keymap.build_keymap(["XF86Macro27", None, "U00E9"]).decode()
+        self.assertIn("key <FK13> {[ XF86Macro27 ]};", text)
+        self.assertIn("key <FK15> {[ U00E9 ]};", text)
+        self.assertNotIn("FK14", text)
         self.assertTrue(text.endswith("\0"))
+        # Chromium/Electron drop xkb keycodes >= 256
+        self.assertTrue(all(code + 8 < 256 for code, _ in keymap.SLOTS))
+
+
+class SlotTests(unittest.TestCase):
+    def keyboard(self):
+        from computer_use_sway import vinput
+
+        kb = vinput.VirtualKeyboard.__new__(vinput.VirtualKeyboard)
+        kb.slots = [None] * len(keymap.SLOTS)
+        kb.pinned = set(keymap.AGENT_KEYSYMS)
+        kb._used = {}
+        kb.uploads = 0
+
+        def upload() -> None:
+            kb.uploads += 1
+
+        kb._upload = upload
+        kb._assign(list(keymap.AGENT_KEYSYMS), settle=False)
+        patcher = unittest.mock.patch.object(vinput, "KEYMAP_SETTLE_S", 0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return kb
+
+    def test_lru_eviction_keeps_agent_keys(self) -> None:
+        kb = self.keyboard()
+        for i in range(30):
+            kb.code_for("U%04X" % (0x100 + i))
+        self.assertTrue(set(keymap.AGENT_KEYSYMS) <= set(kb.slots))
+        self.assertIn("U011D", kb.slots)  # most recent survives
+        self.assertNotIn("U0100", kb.slots)
+
+    def test_codes_map_to_slot_keys(self) -> None:
+        kb = self.keyboard()
+        code = kb.code_for("U00E9")
+        self.assertEqual(code, keymap.SLOTS[kb.slots.index("U00E9")][0])
+        self.assertEqual(kb.code_for("F13"), keymap.SLOTS[kb.slots.index("F13")][0])
 
 
 class WireTests(unittest.TestCase):

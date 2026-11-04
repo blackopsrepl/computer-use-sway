@@ -32,6 +32,7 @@ KEYMAP_FORMAT_XKB_V1 = 1
 BTN = {"left": 0x110, "right": 0x111, "middle": 0x112}
 SCROLL = {"up": (0, -1), "down": (0, 1), "left": (1, -1), "right": (1, 1)}
 DEVICE_SETTLE_S = 0.3
+KEYMAP_SETTLE_S = 0.1  # clients apply a new keymap asynchronously
 
 Gate = Callable[[], None] | None
 Extent = Callable[[], tuple[int, int]]
@@ -138,13 +139,39 @@ class VirtualKeyboard:
         manager, _ = conn.bind("zwp_virtual_keyboard_manager_v1", 1)
         self.id = conn.new_id()
         conn.send(manager, VKBD_MGR_CREATE, struct.pack("=II", seat_obj, self.id))
-        self.private: list[str] = []
-        self._upload(list(keymap.AGENT_KEYSYMS))
+        self.slots: list[str | None] = [None] * len(keymap.SLOTS)
+        self.pinned = set(keymap.AGENT_KEYSYMS)
+        self._used: dict[str, float] = {}
+        self._assign(list(keymap.AGENT_KEYSYMS), settle=False)
         self.sent = 0
 
-    def _upload(self, new: list[str]) -> None:
-        self.private += [sym for sym in new if sym not in self.private]
-        text = keymap.build_keymap(self.private)
+    @property
+    def private(self) -> list[str]:
+        return [sym for sym in self.slots if sym is not None]
+
+    def _assign(self, wanted: list[str], settle: bool = True) -> None:
+        """Bind keysyms to slots (evicting least recently used ones) and upload."""
+        changed = False
+        for sym in wanted:
+            if sym in self.slots:
+                continue
+            if None in self.slots:
+                index = self.slots.index(None)
+            else:
+                protect = self.pinned | set(wanted)
+                victims = [i for i, s in enumerate(self.slots) if s not in protect]
+                if not victims:
+                    raise core.ToolError("too many distinct special characters at once for the keymap")
+                index = min(victims, key=lambda i: self._used.get(self.slots[i] or "", 0.0))
+            self.slots[index] = sym
+            changed = True
+        if changed:
+            self._upload()
+            if settle:
+                time.sleep(KEYMAP_SETTLE_S)
+
+    def _upload(self) -> None:
+        text = keymap.build_keymap(self.slots)
         fd = os.memfd_create("cus-keymap", os.MFD_CLOEXEC)
         try:
             os.write(fd, text)
@@ -173,9 +200,9 @@ class VirtualKeyboard:
             return keymap.NAMED[keysym]
         if len(keysym) == 1 and keysym in keymap.US and not keymap.US[keysym][1]:
             return keymap.US[keysym][0]
-        if keysym not in self.private:
-            self._upload([keysym])
-        return keymap.PRIVATE_BASE + self.private.index(keysym)
+        self._assign([keysym])
+        self._used[keysym] = time.monotonic()
+        return keymap.SLOTS[self.slots.index(keysym)][0]
 
     def chord_code(self, code: int, mods: list[str], hold: float = 0.012) -> None:
         for name in mods:
@@ -211,6 +238,17 @@ class VirtualKeyboard:
             raise core.ToolError("text must not contain NUL bytes")
         if len(text) > core.TEXT_LIMIT:
             raise core.ToolError(f"text exceeds limit of {core.TEXT_LIMIT} characters")
+        # Bind the text's special characters up front (as many as fit) so the
+        # keymap is not swapped between keystrokes in the common case.
+        special: list[str] = []
+        for ch in text:
+            if ch not in keymap.US:
+                sym = keymap.keysym_for_char(ch)
+                if sym not in keymap.NAMED and sym not in special:
+                    special.append(sym)
+        free = len(keymap.SLOTS) - len(self.pinned)
+        if special:
+            self._assign(special[:free])
         typed = 0
         for ch in text:
             if ch in keymap.US:
