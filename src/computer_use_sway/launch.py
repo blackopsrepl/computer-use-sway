@@ -65,12 +65,18 @@ def with_a11y_flags(argv: list[str], a11y: bool) -> tuple[list[str], toolkits.Pr
 REAPER = Path(__file__).with_name("reaper.py")
 
 
-def script(argv: list[str], cwd: str | None, env: dict[str, str]) -> str:
+def pid_file_path() -> Path:
+    return install.launcher_path().with_name("child.pid")
+
+
+def script(argv: list[str], cwd: str | None, env: dict[str, str], pid_file: Path | None = None) -> str:
     lines = ["#!/bin/sh"]
     if cwd:
         lines.append(f"cd {shlex.quote(cwd)} || exit 1")
     for key, value in env.items():
         lines.append(f"export {key}={shlex.quote(value)}")
+    if pid_file is not None:
+        lines.append(f"export COMPUTER_USE_SWAY_PIDFILE={shlex.quote(str(pid_file))}")
     # The reaper keeps sway's launch pid alive as the subreaper of everything
     # the app forks, so sway's pid-ancestry placement holds for apps whose
     # launcher process exits (Electron).
@@ -87,6 +93,21 @@ def write_launcher(text: str) -> None:
     finally:
         os.close(fd)
     os.chmod(path, 0o700)
+
+
+def _register_child(session: Any, pid_file: Path, limit_s: float = 3.0) -> None:
+    """Assign the app's process to the agent workspace as soon as the reaper
+    reports it, so windows after the first (which sway places through the
+    launch context, then consumes it) map there too."""
+    deadline = time.monotonic() + limit_s
+    while time.monotonic() < deadline:
+        try:
+            pid = int(pid_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            time.sleep(0.01)
+            continue
+        session.agent().placement.expect(pid)
+        return
 
 
 def _wait_new_window(session: Any, before: set[int], t0: float, timeout_s: float,
@@ -178,9 +199,12 @@ def launch(session: Any, argv: Any, cwd: Any = None, env: Any = None, timeout_ms
         sentinel = session.sentinel()
         snap = sentinel.snapshot()
         try:
-            write_launcher(script(argv, cwd, env))
+            pid_file = pid_file_path()
+            pid_file.unlink(missing_ok=True)
+            write_launcher(script(argv, cwd, env, pid_file))
             agent.to_workspace()
             agent.tap(install.LAUNCH_KEY)
+            _register_child(session, pid_file)
             win = _wait_new_window(session, before, t0, timeout_ms / 1000.0, install.SEAT)
             if win is not None and win.get("workspace") != install.SEAT:
                 # Placement failed (e.g. the app handed the window to an already
@@ -190,6 +214,7 @@ def launch(session: Any, argv: Any, cwd: Any = None, env: Any = None, timeout_ms
                 win = desktop.window_by_id(int(win["id"])) or win
                 win["moved_from"] = moved_from
             if win is not None:
+                agent.placement.adopt(win)
                 agent.focus(int(win["id"]))
                 win = _settle(int(win["id"])) or win
         finally:

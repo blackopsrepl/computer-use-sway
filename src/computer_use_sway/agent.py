@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import core, install, swayipc, vinput, wire
+from . import core, install, placement, swayipc, vinput, wire
 
 AGENT_X = 100000
 AGENT_MODE = "1920x1080"
@@ -78,6 +78,7 @@ class Agent:
         self.layout_dirty = False
         self.started = False
         self.created = False
+        self.placement = placement.Placement(ipc, log, install.SEAT, user_seat)
 
     # -- events --------------------------------------------------------------
     def _on_event(self, name: str, body: dict) -> None:
@@ -199,6 +200,7 @@ class Agent:
                     f"{self.user_seat} has {user_devices}",
                     code="agent_recovery_failed",
                 )
+            self.placement.reapply()
             self.stale = None
         if self.layout_dirty:
             self.layout_dirty = False
@@ -216,6 +218,7 @@ class Agent:
             self._place_agent()
 
     def stop(self) -> None:
+        self.placement.close()
         if not self.started:
             return
         self.started = False

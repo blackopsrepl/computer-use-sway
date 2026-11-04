@@ -30,6 +30,26 @@ def seat_focus(name: str) -> int | None:
     return None
 
 
+def seat_workspace(name: str, tree: dict[str, Any] | None = None) -> str | None:
+    """The name of the workspace holding a seat's focus (a window or an empty workspace)."""
+    focus = seat_focus(name)
+    if focus is None:
+        return None
+
+    def find(node: dict[str, Any], workspace: str | None) -> str | None:
+        if node.get("type") == "workspace":
+            workspace = node.get("name")
+        if node.get("id") == focus:
+            return workspace
+        for child in node.get("nodes", []) + node.get("floating_nodes", []):
+            found = find(child, workspace)
+            if found is not None:
+                return found
+        return None
+
+    return find(tree or get_tree(), None)
+
+
 def detect_seat() -> str:
     seats = get_seats()
     for seat in seats:

@@ -8,6 +8,10 @@ chain, so their windows map on the user's workspace. As a subreaper, this
 process becomes the parent of every orphaned descendant, keeping the chain
 intact. It exits when its last descendant does, with the first child's status.
 
+When COMPUTER_USE_SWAY_PIDFILE is set, the child's pid is written there (and
+the variable is not passed on), so the server can register the placement of
+the app's later windows before they map.
+
 Standalone on purpose (run by path from the launcher script): stdlib only,
 no package imports.
 """
@@ -21,6 +25,7 @@ import subprocess
 import sys
 
 PR_SET_CHILD_SUBREAPER = 36
+PID_FILE_ENV = "COMPUTER_USE_SWAY_PIDFILE"
 
 
 def main(argv: list[str]) -> int:
@@ -32,11 +37,20 @@ def main(argv: list[str]) -> int:
         libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0)
     except (OSError, AttributeError):
         pass  # placement degrades to sway's own pid match; the app still runs
+    pid_file = os.environ.pop(PID_FILE_ENV, None)
     try:
         child = subprocess.Popen(argv)
     except OSError as exc:
         print(f"reaper: cannot start {argv[0]}: {exc}", file=sys.stderr)
         return 127
+    if pid_file:
+        try:
+            tmp = pid_file + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as handle:
+                handle.write(str(child.pid))
+            os.replace(tmp, pid_file)
+        except OSError:
+            pass  # later windows fall back to the server's move-after-map
 
     def forward(signum: int, _frame: object) -> None:
         try:
