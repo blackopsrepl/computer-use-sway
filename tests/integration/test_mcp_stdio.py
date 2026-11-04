@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 import sys
 import unittest
 from pathlib import Path
@@ -64,6 +66,27 @@ class McpStdioTests(unittest.TestCase):
             self.assertEqual(act["payload"]["characters"], len("s3cret-text"))
             self.assertNotIn("s3cret-text", raw)
             self.assertEqual(os.stat(stream).st_mode & 0o777, 0o600)
+
+    def test_t5_1_the_hermes_mcp_client_lists_all_tools(self) -> None:
+        # The annotations are keys the 2024-11-05 protocol does not define;
+        # the client must still list every tool.
+        hermes = shutil.which("hermes")
+        if hermes is None:
+            self.skipTest("needs the hermes CLI")
+        with sandbox.Sandbox(width=1280, height=800) as box, tempfile.TemporaryDirectory() as home:
+            env_keys = ("XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "SWAYSOCK", "DBUS_SESSION_BUS_ADDRESS")
+            server_env = {key: box.env[key] for key in env_keys if key in box.env}
+            server_env["PYTHONPATH"] = SRC
+            config = {"mcp_servers": {"cus": {"command": sys.executable, "args": ["-m", "computer_use_sway"],
+                                              "env": server_env}}}
+            # JSON is YAML: no YAML writer needed.
+            Path(home, "config.yaml").write_text(json.dumps(config), encoding="utf-8")
+            out = subprocess.run([hermes, "mcp", "test", "cus"], env=dict(os.environ, HERMES_HOME=home),
+                                 capture_output=True, text=True, timeout=120)
+            self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+            self.assertIn("Tools discovered: 19", out.stdout)
+            for name in ("observe", "act", "run", "clipboard_get"):
+                self.assertIn(name, out.stdout)
 
 
 if __name__ == "__main__":
