@@ -1,3 +1,10 @@
+"""Errors, results, subprocess execution and session-environment recovery.
+
+Why one bottom module: every expected failure must surface as a ToolError with
+a clear message (never a raw OSError), and MCP hosts often launch the server
+with a stripped environment that has to be rebuilt before anything else runs.
+"""
+
 from __future__ import annotations
 
 import glob

@@ -1,3 +1,8 @@
+"""The Sway desktop as data: outputs, seats, the window tree, coordinates and
+process ancestry, read over IPC. Why: every other layer needs the same view of
+where windows are and which seat holds focus, and IPC is the only authority.
+"""
+
 from __future__ import annotations
 
 import re
