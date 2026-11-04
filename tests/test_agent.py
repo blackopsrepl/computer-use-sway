@@ -109,8 +109,13 @@ class AgentTests(unittest.TestCase):
     def test_recovery_refuses_when_devices_land_on_seat0(self) -> None:
         self.agent.start()
         self.agent._on_event("workspace", {"change": "reload"})
-        self.ipc.seat_list = [{"name": "seat0", "focus": 5, "devices": [1, 2, 3, 4, 5]},
-                              {"name": "cus-agent", "focus": 0, "devices": []}]
+        seats = self.ipc.seat_list
+
+        def recreate_onto_seat0() -> None:  # the new devices end up on seat0
+            seats[0]["devices"] = seats[0]["devices"] + [9, 10]
+            seats[1]["devices"] = []
+
+        self.devices.recreate = recreate_onto_seat0
         with self.assertRaises(core.ToolError):
             self.agent.ensure_ready()
 

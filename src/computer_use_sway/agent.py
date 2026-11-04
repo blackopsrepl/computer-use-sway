@@ -78,7 +78,6 @@ class Agent:
         self.layout_dirty = False
         self.started = False
         self.created = False
-        self._user_device_count: int | None = None
 
     # -- events --------------------------------------------------------------
     def _on_event(self, name: str, body: dict) -> None:
@@ -142,8 +141,6 @@ class Agent:
                 code="agent_seat_missing",
             )
         self.log.add_listener(self._on_event)
-        user_before = self._seat(self.user_seat)
-        self._user_device_count = len((user_before or {}).get("devices", []))
         focus_before = self._user_focus()
         self.devices = self._factory()
         self._adopt_or_create_output()
@@ -185,6 +182,10 @@ class Agent:
         if self.stale == "shutdown":
             raise core.ToolError("sway is shutting down or the IPC socket was lost", code="sway_gone")
         if self.stale == "reload":
+            # After a reload the agent's devices sit on seat0 [S8]; recreating
+            # them on the agent seat must leave seat0 with no more devices than
+            # it has right now.
+            user_before = len((self._seat(self.user_seat) or {}).get("devices", []))
             self.devices.recreate()
             self._pin_user()
             self._place_agent()
@@ -192,7 +193,7 @@ class Agent:
             user_seat = self._seat(self.user_seat) or {}
             agent_devices = len(agent_seat.get("devices", []))
             user_devices = len(user_seat.get("devices", []))
-            if agent_devices < 2 or (self._user_device_count is not None and user_devices > self._user_device_count):
+            if agent_devices < 2 or user_devices > user_before:
                 raise core.ToolError(
                     f"agent seat recovery failed: cus-agent has {agent_devices} devices, "
                     f"{self.user_seat} has {user_devices}",
