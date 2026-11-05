@@ -51,10 +51,8 @@ def call_tool(name: str, arguments: dict[str, Any]) -> tuple[list[dict[str, Any]
     """Run one tool; returns (content, curated meta). Raises ToolError.
     Whatever the call did or raised, the agent's cursor ends it on the agent
     output, never on the user's screen (FINDINGS I9)."""
-    try:
+    with session.tool_call():
         out = TOOLS[name](arguments)
-    finally:
-        session.park_agent_pointer()
     if isinstance(out, Result):
         return out.content, out.meta
     return out, {}

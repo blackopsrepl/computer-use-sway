@@ -104,6 +104,23 @@ class LaunchTests(unittest.TestCase):
             launch.validate(["sh"], None, {"bad-key": "x"}, 20000)
 
 
+class PointerStartTests(unittest.TestCase):
+    def test_the_pointer_starts_where_the_device_form_puts_it_first(self) -> None:
+        from types import SimpleNamespace
+
+        from computer_use_sway.actions_delivery import pointer_start
+
+        entry = SimpleNamespace(states=[])
+        focused = SimpleNamespace(states=["focused"])
+        self.assertEqual(pointer_start("click", None, (5, 6)), (5, 6))
+        self.assertEqual(pointer_start("drag_to", None, (5, 6)), (5, 6))
+        self.assertEqual(pointer_start("set_text", entry, (5, 6)), (5, 6))
+        self.assertEqual(pointer_start("type", entry, (5, 6)), (5, 6))
+        self.assertIsNone(pointer_start("type", focused, (5, 6)))  # typed without a click
+        self.assertIsNone(pointer_start("key", None, (5, 6)))
+        self.assertIsNone(pointer_start("click", None, None))
+
+
 class FakeSession:
     options = {"settle_ms": 0}
 

@@ -10,9 +10,10 @@ Modes:
 from __future__ import annotations
 
 import atexit
+import contextlib
 import os
 import shutil
-from typing import Any
+from typing import Any, Iterator
 
 from . import core, desktop, swayipc, timeline
 
@@ -245,18 +246,25 @@ def _stop_at_exit() -> None:
             core.eprint(f"session stop at exit failed: {exc!r}")
 
 
-def park_agent_pointer() -> None:
-    """After every tool call: the agent's cursor never stays on a user output
-    (FINDINGS I9). Never raises; a failure is logged and the next call's
-    recovery parks it."""
-    sess = _current
-    agent_ = sess._agent if sess is not None else None
-    if agent_ is None:
-        return
+@contextlib.contextmanager
+def tool_call() -> Iterator[None]:
+    """Wraps every tool call. While calls run, the agent leaves its cursor
+    where the call put it; when the last one ends the cursor goes home, even
+    if the call failed (FINDINGS I9). Parking never fails a call."""
+    agent_ = _current._agent if _current is not None else None
+    if agent_ is not None:
+        agent_.busy += 1
     try:
-        agent_.park_pointer()
-    except Exception as exc:  # noqa: BLE001 - parking must never fail a call
-        core.eprint(f"could not park the agent pointer: {exc!r}")
+        yield
+    finally:
+        agent_ = _current._agent if _current is not None else agent_
+        if agent_ is not None:
+            agent_.busy = max(0, agent_.busy - 1)
+            if agent_.busy == 0:
+                try:
+                    agent_.park_pointer()
+                except Exception as exc:  # noqa: BLE001 - parking must never fail a call
+                    core.eprint(f"could not park the agent pointer: {exc!r}")
 
 
 def current() -> Session:

@@ -102,18 +102,31 @@ class AgentTests(unittest.TestCase):
         self.agent.stop()
         self.assertLess(cmds.index("devices:destroy"), cmds.index('output "HEADLESS-1" unplug'))
 
-    def test_a_pointer_left_on_a_user_output_is_parked_back(self) -> None:
-        # A click on a visible window leaves the agent's cursor there [I9].
+    def test_the_cursor_goes_home_by_a_seat_warp_wherever_it_was(self) -> None:
+        # sway warps the cursor to the seat's focus without telling the pointer,
+        # so parking does not trust the recorded position [I9].
         self.agent.start()
-        self.assertFalse(self.agent.park_pointer())  # never moved
-        self.devices.pointer.move_to(2000, 600)  # on the agent output
-        self.assertFalse(self.agent.park_pointer())
-        self.devices.pointer.move_to(232, 405)  # on the user's DP-1
+        self.devices.pointer.move_to(2000, 600)  # recorded on the agent output
+        self.ipc.commands.clear()
         self.assertTrue(self.agent.park_pointer())
         self.assertEqual(self.devices.pointer.position, (2880, 540))
+        # a seat warp, never pointer motion, which would move the agent's focus
+        self.assertEqual(self.ipc.commands, ["seat cus-agent cursor set 2880 540"])
         self.agent._on_event("workspace", {"change": "reload"})
-        self.devices.pointer.move_to(232, 405)
         self.assertFalse(self.agent.park_pointer())  # stale: recovery parks it instead
+
+    def test_between_calls_a_focus_change_parks_the_cursor(self) -> None:
+        self.agent.start()
+        park = "seat cus-agent cursor set 2880 540"
+        self.ipc.commands.clear()
+        self.agent.busy = 1
+        self.agent._on_event("window", {"change": "close"})
+        self.assertNotIn(park, self.ipc.commands)  # a call is running: its cursor is its own
+        self.agent.busy = 0
+        self.agent._on_event("window", {"change": "title"})
+        self.assertNotIn(park, self.ipc.commands)
+        self.agent._on_event("window", {"change": "close"})
+        self.assertIn(park, self.ipc.commands)
 
     def test_reload_parks_the_cursor_before_the_devices_return(self) -> None:
         self.agent.start()

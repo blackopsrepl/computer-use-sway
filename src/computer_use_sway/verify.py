@@ -51,6 +51,18 @@ class Baseline:
     a11y: tuple[str, str] | None
 
 
+def settle_window(con_id: int | None) -> None:
+    """Wait (at most 400 ms) for a window to stop redrawing, e.g. after the
+    pointer entered it and a widget took its hover look."""
+    win = desktop.window_by_id(con_id) if con_id is not None else None
+    if win is None or not win.get("visible"):
+        return
+    try:
+        capture.settle(capture.window_region(win), 60, 400)
+    except core.ToolError:
+        pass
+
+
 def take_baseline(session: Any, element: Any, con_id: int | None, want_pixels: bool = True) -> Baseline:
     win = desktop.window_by_id(con_id) if con_id is not None else None
     region = shot = None

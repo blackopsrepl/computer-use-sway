@@ -21,7 +21,8 @@ a measured trap (docs/plan-1.0/FINDINGS.md):
   user's screen (I8). Start creates the output first; stop removes the
   devices first. A pointer action on a user output (a click on a visible
   window) shows the agent's cursor there for that call only: the dispatch
-  layer parks it back after every tool call (I9).
+  layer parks it back after every tool call, and between calls every focus
+  change sway may follow with a cursor warp parks it again (I9).
 """
 
 from __future__ import annotations
@@ -68,6 +69,12 @@ class StateFile:
             pass
 
 
+# Events after which sway may have warped a seat's cursor to that seat's focus
+# (seat_consider_warp_to_focus: a window unmapped, focus or a container moved).
+WARPING_EVENTS = {("window", "close"), ("window", "focus"), ("window", "move"), ("window", "new"),
+                  ("workspace", "focus"), ("workspace", "move"), ("workspace", "empty")}
+
+
 def _quote(name: str) -> str:
     return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -85,6 +92,7 @@ class Agent:
         self.output: str | None = None
         self.saved_user: dict[str, list[int]] = {}
         self.stale: str | None = None
+        self.busy = 0  # tool calls in progress (the dispatch layer counts them)
         self.layout_dirty = False
         self.started = False
         self.created = False
@@ -92,6 +100,13 @@ class Agent:
 
     # -- events --------------------------------------------------------------
     def _on_event(self, name: str, body: dict) -> None:
+        if self.busy == 0 and (name, body.get("change")) in WARPING_EVENTS:
+            # Between calls nothing of ours moves the cursor; sway may have just
+            # warped it to the agent seat's focus on a user output (I9).
+            try:
+                self.park_pointer()
+            except core.ToolError as exc:
+                core.eprint(f"could not park the agent pointer: {exc}")
         if name == "workspace" and body.get("change") == "reload":
             self.stale = "reload"
         elif name == "output":
@@ -138,21 +153,22 @@ class Agent:
                          f"{rect['x'] + rect['width'] // 2} {rect['y'] + rect['height'] // 2}")
 
     def park_pointer(self) -> bool:
-        """Bring the agent's cursor home after a tool call that left it on a
-        user output. Returns whether it moved. Moving the virtual pointer, not
-        warping the seat, keeps its recorded position true."""
+        """Put the agent's cursor home on the agent output. Returns whether it
+        did. Called after every tool call and, between calls, after every
+        focus change sway may follow with a cursor warp (I9).
+
+        Always a seat warp, never pointer motion: sway runs focus_follows_mouse
+        on motion only, and motion would move the agent's keyboard focus.
+        Unconditional: sway warps a seat's cursor to its focus (mouse_warping)
+        when a window closes or focus moves, without telling the pointer, so
+        the recorded position cannot say where the cursor is."""
         if not self.started or self.stale or self.devices is None or self.output is None:
             return False
-        pointer = self.devices.pointer
-        if pointer.position is None:
-            return False  # never moved: still where start parked it
         rect = next((o["rect"] for o in self._outputs() if o["name"] == self.output), None)
         if rect is None:
             return False
-        x, y = pointer.position
-        if rect["x"] <= x < rect["x"] + rect["width"] and rect["y"] <= y < rect["y"] + rect["height"]:
-            return False
-        pointer.move_to(rect["x"] + rect["width"] // 2, rect["y"] + rect["height"] // 2)
+        self._park_cursor()
+        self.devices.pointer.position = (rect["x"] + rect["width"] // 2, rect["y"] + rect["height"] // 2)
         return True
 
     def _place_agent(self) -> None:

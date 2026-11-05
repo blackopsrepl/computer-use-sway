@@ -104,7 +104,10 @@ Options (`session start`): `foreground` (`idle`\|`always`\|`never`, default
 - The agent may act with its own pointer on a window the user sees; its
   cursor is then on the user's screen for that call. The dispatch layer moves
   it back to the agent output after every tool call, whether the call
-  succeeded or failed (FINDINGS I9).
+  succeeded or failed, and between calls after every focus change after which
+  sway may warp a seat's cursor to its focus (a window closing, for one). The
+  move is a seat warp, which leaves the agent's keyboard focus alone
+  (FINDINGS I9).
 - The agent output is a headless output at x=100000; the user's outputs are
   pinned at their positions before it is created (FINDINGS O2).
 - Every agent-seat binding is followed by IPC `nop` (FINDINGS O6).

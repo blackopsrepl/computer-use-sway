@@ -15,7 +15,7 @@ import time
 from typing import Any
 
 from . import core, desktop, geometry, query, scene, toolkits, verify, vinput
-from .actions_delivery import Delivery, device_form, foreground, needs_keyboard, semantic
+from .actions_delivery import Delivery, device_form, foreground, needs_keyboard, pointer_start, semantic
 
 ACTIONS = ("press", "activate", "toggle", "focus", "set_text", "type", "key", "click", "double_click",
            "right_click", "scroll", "drag_to", "set_value", "select")
@@ -111,6 +111,17 @@ def expectation(action: str, element: Any, d: Delivery, client: Any) -> verify.E
     return None
 
 
+def hover_first(devices: Any, action: str, element: Any, point: Any, con_id: int | None,
+                do_verify: bool) -> None:
+    """Put the pointer where the action starts and let the window settle
+    before the baseline: hover is not the action's effect."""
+    start = pointer_start(action, element, point)
+    if start is None or not do_verify:
+        return
+    devices.pointer.move_to(*start)
+    verify.settle_window(con_id)
+
+
 def run_rung(session: Any, rung: str, action: str, element: Any, con_id: int | None, point: Any,
              d: Delivery, do_verify: bool) -> dict[str, Any]:
     client = session.a11y_or_none()
@@ -129,8 +140,9 @@ def run_rung(session: Any, rung: str, action: str, element: Any, con_id: int | N
             if con_id is not None:
                 agent.focus(con_id)
             point = fresh_point(session, element, point)
-            base = verify.take_baseline(session, element, con_id, want_pixels=do_verify)
             try:
+                hover_first(agent.devices, action, element, point, con_id, do_verify)
+                base = verify.take_baseline(session, element, con_id, want_pixels=do_verify)
                 device_form(agent.devices, action, element, point, d)
             except vinput.AgentSeatLost:
                 # A reload landed before anything was sent: recover the seat
@@ -138,6 +150,8 @@ def run_rung(session: Any, rung: str, action: str, element: Any, con_id: int | N
                 agent.ensure_ready()
                 if con_id is not None:
                     agent.focus(con_id)
+                hover_first(agent.devices, action, element, point, con_id, do_verify)
+                base = verify.take_baseline(session, element, con_id, want_pixels=do_verify)
                 device_form(agent.devices, action, element, point, d)
             out = verify.verdict(session, base, expect) if do_verify else verify.disabled()
         finally:
@@ -149,6 +163,7 @@ def run_rung(session: Any, rung: str, action: str, element: Any, con_id: int | N
         if con_id is not None:
             desktop.ipc().command(f"[con_id={int(con_id)}] focus")
         point = fresh_point(session, element, point)
+        hover_first(sess_devices, action, element, point, con_id, do_verify)
         base = verify.take_baseline(session, element, con_id, want_pixels=do_verify)
         device_form(sess_devices, action, element, point, d)
         out = verify.verdict(session, base, expect) if do_verify else verify.disabled()

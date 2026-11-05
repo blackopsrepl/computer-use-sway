@@ -67,6 +67,22 @@ def _point(point: Any) -> tuple[int, int]:
     return int(point[0]), int(point[1])
 
 
+def pointer_start(action: str, element: Any, point: Any) -> tuple[int, int] | None:
+    """Where the device form puts the pointer first, or None if it does not.
+    The verdict baseline is taken with the pointer already there, so a hover
+    highlight is not mistaken for the action's effect."""
+    if point is None:
+        return None
+    if action in ("press", "activate", "toggle", "focus", "click", "select", "double_click", "right_click",
+                  "scroll", "drag_to"):
+        return _point(point)
+    if action == "set_text" and element is not None:
+        return _point(point)
+    if action == "type" and element is not None and "focused" not in (element.states or []):
+        return _point(point)
+    return None
+
+
 def device_form(devices: Any, action: str, element: Any, point: Any, d: Delivery) -> None:
     if element is not None and "offscreen" in (element.states or []) and action in POINTER_ACTIONS + ("set_text",):
         raise core.ToolError(f"{element.ref} is scrolled out of view; scroll it into view, then observe again",
