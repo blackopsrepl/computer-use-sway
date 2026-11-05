@@ -50,8 +50,9 @@ Every row is a measurement; the evidence is in `docs/plan-1.0/FINDINGS.md` and
 | claim | evidence |
 |---|---|
 | Agent input on its own seat does not move your focus or eat your typing | integration T4.6, 5/5 runs; benchmark: 0 focus moves and 0 lost characters over 48 runs |
-| GTK3, GTK4, Qt6, Firefox, foot, Alacritty and Ghostty accept the agent seat; Chromium, Electron, kitty and WezTerm are reached semantically, or through your seat only while you are idle, with your focus restored | FINDINGS I5, I7, F1 |
-| Exact Unicode text, including 8 distinct non-ASCII characters in one string, in GTK3, GTK4, Qt6, Firefox, Chromium, Electron and five terminals | FINDINGS I3, I6 |
+| GTK3, GTK4, Qt6, Firefox, foot, Alacritty and Ghostty accept the agent seat; Chromium, Electron and kitty are reached semantically, or through your seat only while you are idle, with your focus restored | FINDINGS I5, I7, F1 |
+| Exact Unicode text, including 8 distinct non-ASCII characters in one string, in GTK3, GTK4, Qt6, Firefox, Chromium, Electron and four terminals | FINDINGS I3, I6 |
+| The agent's cursor never appears on your screen, and an idle server leaves nothing on the desktop | FINDINGS I8 |
 | Launched apps, their dialogs and their later windows open on the agent workspace | FINDINGS O11, O12 |
 | Clicks computed from the accessibility tree hit their target on 7 toolkits at scale 1 and 2 | FINDINGS A4, 12/12 |
 | OCR grounds clicks where there is no tree | FINDINGS P2, 10/10 |

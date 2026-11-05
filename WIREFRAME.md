@@ -92,15 +92,14 @@ Options (`session start`): `foreground` (`idle`\|`always`\|`never`, default
   (a runtime seat dies on `reload`, FINDINGS S7).
 - Virtual pointer and keyboard are bound to that `wl_seat` over a stdlib
   Wayland client. GTK3, GTK4, Qt6, Firefox, foot, Alacritty and Ghostty accept
-  them; Chromium, Electron, kitty and WezTerm do not (FINDINGS I5, I7) and are
-  reached semantically or through the foreground step.
-- A detached anchor process (`python -m computer_use_sway.anchor`, one per
-  sway session) holds an idle pointer and keyboard on the agent seat, so the
-  seat's capabilities never drop when the server exits. WezTerm drops the
-  user's keyboard whenever any seat loses one (FINDINGS I7). A sway `reload`
-  still strips the agent seat for a moment, which WezTerm windows open at
-  that time do not survive; that is WezTerm's seat handling and needs a fix
-  there.
+  them; Chromium, Electron and kitty do not (FINDINGS I5, I7) and are reached
+  semantically or through the foreground step.
+- The agent seat has devices only while the agent output exists. Start
+  creates the output, parks the seat's cursor on it, then creates the
+  devices; stop destroys the devices, then unplugs the output; recovery after
+  a reload parks the cursor before recreating them. A seat with a pointer
+  draws its own cursor, so the agent's cursor is never on the user's screen,
+  and an idle server leaves nothing on the desktop (FINDINGS I8).
 - The agent output is a headless output at x=100000; the user's outputs are
   pinned at their positions before it is created (FINDINGS O2).
 - Every agent-seat binding is followed by IPC `nop` (FINDINGS O6).
@@ -167,7 +166,6 @@ All under `$XDG_RUNTIME_DIR` (directories `0700`, files `0600`) unless noted:
 | `computer-use-sway/session.json` | agent output name, saved user output positions, creation time |
 | `computer-use-sway/launch/next.sh` | the launcher script the agent's binding runs; rewritten per launch, reset to a no-op after |
 | `computer-use-sway/launch/child.pid` | the launched app's pid, written by the reaper for placement |
-| `computer-use-sway/anchor.pid` | the anchor's pid, under an flock held for its life |
 | `computer-use-sway/sandbox-<pid>-<n>/` | sandbox mode root; teardown removes only this explicit path |
 | `~/.config/sway/config.d/computer-use-sway.conf` | written only by `--install-sway-config` (`0644`) |
 

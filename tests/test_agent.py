@@ -54,14 +54,16 @@ class FakeKeyboard:
 
 class FakeDevices:
     def __init__(self, log: list[str]) -> None:
+        self.log = log
         self.keyboard = FakeKeyboard(log)
         self.recreated = 0
 
     def recreate(self) -> None:
         self.recreated += 1
+        self.log.append("devices:recreate")
 
     def destroy(self) -> None:
-        pass
+        self.log.append("devices:destroy")
 
 
 class AgentTests(unittest.TestCase):
@@ -71,7 +73,31 @@ class AgentTests(unittest.TestCase):
         self.ipc = FakeIpc()
         self.devices = FakeDevices(self.ipc.commands)
         self.agent = agent.Agent(self.ipc, None, swayipc.EventLog(), agent.StateFile(Path(tmp.name) / "s.json"),
-                                 devices_factory=lambda: self.devices)
+                                 devices_factory=self.make_devices)
+
+    def make_devices(self) -> FakeDevices:
+        self.ipc.commands.append("devices:create")
+        return self.devices
+
+    def test_the_agent_pointer_exists_only_with_its_cursor_on_the_agent_output(self) -> None:
+        # A seat with a pointer draws a cursor; with no agent output sway puts
+        # it on the user's screen [I8].
+        self.agent.start()
+        cmds = self.ipc.commands
+        park = "seat cus-agent cursor set 2880 540"  # the centre of HEADLESS-1
+        self.assertLess(cmds.index("create_output"), cmds.index(park))
+        self.assertLess(cmds.index(park), cmds.index("devices:create"))
+        cmds.clear()
+        self.agent.stop()
+        self.assertLess(cmds.index("devices:destroy"), cmds.index('output "HEADLESS-1" unplug'))
+
+    def test_reload_parks_the_cursor_before_the_devices_return(self) -> None:
+        self.agent.start()
+        self.agent._on_event("workspace", {"change": "reload"})
+        self.ipc.commands.clear()
+        self.agent.ensure_ready()
+        cmds = self.ipc.commands
+        self.assertLess(cmds.index("seat cus-agent cursor set 2880 540"), cmds.index("devices:recreate"))
 
     def test_pins_precede_create_output_and_workspace_is_renamed(self) -> None:
         self.agent.start()
@@ -122,7 +148,7 @@ class AgentTests(unittest.TestCase):
     def test_adopts_a_saved_live_output(self) -> None:
         self.agent.start()
         self.ipc.commands.clear()
-        again = agent.Agent(self.ipc, None, swayipc.EventLog(), self.agent.state, devices_factory=lambda: self.devices)
+        again = agent.Agent(self.ipc, None, swayipc.EventLog(), self.agent.state, devices_factory=self.make_devices)
         again.start()
         self.assertNotIn("create_output", self.ipc.commands)
         self.assertEqual(again.output, "HEADLESS-1")
@@ -258,29 +284,6 @@ class SigtermTests(unittest.TestCase):
             self.assertIs(signal.getsignal(signal.SIGTERM), mine)
         finally:
             signal.signal(signal.SIGTERM, previous)
-
-
-class AnchorTests(unittest.TestCase):
-    def test_running_follows_the_lock(self) -> None:
-        import fcntl
-        import os
-        import tempfile
-
-        from computer_use_sway import anchor
-
-        with tempfile.TemporaryDirectory() as tmp, \
-                unittest.mock.patch.object(anchor.install, "runtime_root", return_value=Path(tmp)):
-            self.assertFalse(anchor.running())
-            fd = os.open(Path(tmp) / anchor.PID_NAME, os.O_CREAT | os.O_RDWR, 0o600)
-            try:
-                self.assertFalse(anchor.running())  # file without a holder
-                fcntl.flock(fd, fcntl.LOCK_EX)
-                pid = os.fork()
-                if pid == 0:  # another process sees the lock held
-                    os._exit(0 if anchor.running() else 1)
-                self.assertEqual(os.waitstatus_to_exitcode(os.waitpid(pid, 0)[1]), 0)
-            finally:
-                os.close(fd)
 
 
 if __name__ == "__main__":

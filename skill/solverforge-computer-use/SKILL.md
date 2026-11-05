@@ -41,7 +41,7 @@ here. The repository's WIREFRAME.md is the full contract.
   (`select`, `press`, `set_text`) still reach them; pointer actions do not.
 - Elements marked `[popup]` sit in a menu whose position no one reports: press
   or activate them; do not click coordinates.
-- Chromium, Electron, kitty and WezTerm ignore your seat's raw input; the
+- Chromium, Electron and kitty ignore your seat's raw input; the
   server uses semantic actions, then borrows the user's seat only while they
   are idle, and restores their focus. foot, Alacritty and Ghostty take your
   seat. Terminals expose no text: verify terminal output by reading a file the

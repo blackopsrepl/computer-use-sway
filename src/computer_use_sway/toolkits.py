@@ -29,9 +29,8 @@ PROFILES = {
     "qt": Profile("qt", True, "reliable", False, False, (), True),
     "gecko": Profile("gecko", True, "lies", False, True, (), True),
     "chromium": Profile("chromium", False, "absent", True, None, ("--force-renderer-accessibility",), False),
-    # Terminals [I5, I7]: kitty ignores a second seat; WezTerm binds one
-    # keyboard across all seats (the user's, which exists first); foot,
-    # Alacritty and Ghostty accept the agent seat. None exposes its text.
+    # Terminals [I5, I7]: kitty and WezTerm ignore a second seat's input;
+    # foot, Alacritty and Ghostty accept the agent seat. None exposes its text.
     "terminal": Profile("terminal", False, "absent", False, None, (), False),
     "terminal-seat": Profile("terminal-seat", True, "absent", False, None, (), False),
     "unknown": Profile("unknown", None, "absent", False, None, (), False),

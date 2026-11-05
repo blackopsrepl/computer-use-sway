@@ -11,7 +11,12 @@ a measured trap (docs/plan-1.0/FINDINGS.md):
 - user outputs are pinned at their current position before `create_output`,
   or sway re-arranges them and moves the user's focus (O2, O8);
 - the agent workspace is named by IPC rename, never by a `workspace <name>`
-  binding, which leaks the name onto user outputs (O9).
+  binding, which leaks the name onto user outputs (O9);
+- the agent seat has a pointer only while the agent output exists, and its
+  cursor is parked on that output before the pointer appears: a seat with a
+  pointer draws its own cursor, and with no agent output sway puts it on the
+  user's screen (I8). Start creates the output first; stop removes the
+  devices first.
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import anchor, core, install, placement, swayipc, vinput, wire
+from . import core, install, placement, swayipc, vinput, wire
 
 AGENT_X = 100000
 AGENT_MODE = "1920x1080"
@@ -79,7 +84,6 @@ class Agent:
         self.started = False
         self.created = False
         self.placement = placement.Placement(ipc, log, install.SEAT, user_seat)
-        self.anchor = devices_factory is None  # unit tests inject fake devices and no anchor
 
     # -- events --------------------------------------------------------------
     def _on_event(self, name: str, body: dict) -> None:
@@ -111,6 +115,14 @@ class Agent:
     def _pin_user(self) -> None:
         for name, (x, y) in self.saved_user.items():
             self.ipc.command(f"output {_quote(name)} position {x} {y}")
+
+    def _park_cursor(self) -> None:
+        """Put the agent seat's cursor on the agent output. A seat without a
+        pointer draws no cursor, but keeps a position; the pointer created
+        next would show its cursor there, on a user output, until it moved."""
+        rect = next(o["rect"] for o in self._outputs() if o["name"] == self.output)
+        self.ipc.command(f"seat {install.SEAT} cursor set "
+                         f"{rect['x'] + rect['width'] // 2} {rect['y'] + rect['height'] // 2}")
 
     def _place_agent(self) -> None:
         assert self.output is not None
@@ -144,12 +156,9 @@ class Agent:
             )
         self.log.add_listener(self._on_event)
         focus_before = self._user_focus()
-        if self.anchor:
-            # Before our own devices: the seat's capabilities must never drop
-            # when this process exits (WezTerm, FINDINGS I7).
-            anchor.ensure()
-        self.devices = self._factory()
         self._adopt_or_create_output()
+        self._park_cursor()
+        self.devices = self._factory()
         disturbed = False
         if focus_before is not None and self._user_focus() != focus_before:
             self.ipc.command(f"[con_id={focus_before}] focus")
@@ -192,9 +201,10 @@ class Agent:
             # them on the agent seat must leave seat0 with no more devices than
             # it has right now.
             user_before = len((self._seat(self.user_seat) or {}).get("devices", []))
-            self.devices.recreate()
             self._pin_user()
             self._place_agent()
+            self._park_cursor()  # the reloaded seat's cursor may sit on a user output
+            self.devices.recreate()
             agent_seat = self._seat(install.SEAT) or {}
             user_seat = self._seat(self.user_seat) or {}
             agent_devices = len(agent_seat.get("devices", []))
@@ -217,6 +227,7 @@ class Agent:
             if self.output not in live:
                 self.started = False
                 self.devices.destroy()
+                self.devices = None
                 self.start()
                 return
             self._pin_user()
@@ -227,13 +238,14 @@ class Agent:
         if not self.started:
             return
         self.started = False
+        if self.devices is not None:  # before the output, so the cursor goes with it
+            self.devices.destroy()
+            self.devices = None
         if self.output:
             try:
                 self.ipc.command(f"output {_quote(self.output)} unplug")
             except core.ToolError:
                 pass
-        if self.devices is not None:
-            self.devices.destroy()
         self.state.clear()
         self.log.remove_listener(self._on_event)
 

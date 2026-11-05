@@ -41,7 +41,7 @@ Layers in `src/computer_use_sway/` (dependencies point down; details in
 - transports: `swayipc.py`, `wire.py`, `keymap.py`, `vinput.py`, `dbus.py`.
 - desktop: `core.py` (errors, subprocesses, environment recovery), `desktop.py`,
   `geometry.py`, `capture.py`.
-- agent: `install.py`, `agent.py`, `anchor.py`, `placement.py`, `sentinel.py`,
+- agent: `install.py`, `agent.py`, `placement.py`, `sentinel.py`,
   `session.py`, `sandbox.py`, `reaper.py`.
 - perception: `atspi.py`, `toolkits.py`, `ocr.py`, `query.py`, `refs.py`,
   `scene.py`.

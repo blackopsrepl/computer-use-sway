@@ -13,7 +13,7 @@ choice are in `docs/plan-1.0/FINDINGS.md`; the full design is
 |---|---|---|
 | transports | `swayipc`, `wire`, `keymap`, `vinput`, `dbus` | Sway IPC with an event subscription; a Wayland client for virtual pointer/keyboard and the idle notifier; a D-Bus client for AT-SPI |
 | desktop | `core`, `desktop`, `geometry`, `capture` | errors, environment recovery, the Sway tree, coordinates, grim captures and change detection |
-| agent | `install`, `agent`, `anchor`, `placement`, `sentinel`, `session`, `sandbox`, `reaper` | the config-declared agent seat, its output and workspace, the seat anchor, window placement, the user's focus/idle sentinel, modes, the test sandbox |
+| agent | `install`, `agent`, `placement`, `sentinel`, `session`, `sandbox`, `reaper` | the config-declared agent seat, its output and workspace, window placement, the user's focus/idle sentinel, modes, the test sandbox |
 | perception | `atspi`, `toolkits`, `ocr`, `query`, `refs`, `scene` | the accessibility tree, measured toolkit profiles, the OCR ensemble, queries, refs and their validation, the rendered scene |
 | action | `actions`, `actions_delivery`, `verify`, `launch`, `waits`, `plans` | the delivery ladder, verdicts, launching, waits and multi-step runs |
 | surface | `tools*`, `specs*`, `server`, `cli`, `timeline`, `version` | MCP tools and schemas, the protocol loop, the CLI, the timeline stream |
@@ -26,8 +26,8 @@ Dependencies point down the table only. Every file stays under 500 lines
 1. The first call that needs the desktop starts the session in `seat` mode
    (or the mode `session start` asked for). The agent pins the user's outputs,
    creates the headless output at x=100000, renames its workspace to
-   `cus-agent`, makes sure the anchor process runs, and creates virtual
-   devices on the config-declared seat.
+   `cus-agent`, parks the agent seat's cursor on that output, and only then
+   creates virtual devices on the config-declared seat (FINDINGS I8).
 2. `observe` walks the AT-SPI tree of each window in scope, maps extents to
    layout points, adds OCR words where the tree is thin, and numbers everything
    as refs of one snapshot.
@@ -36,21 +36,18 @@ Dependencies point down the table only. Every file stays under 500 lines
    AT-SPI events, Sway events and pixels.
 4. `launch` writes the launcher script, fires the agent's launcher binding,
    registers the reported child pid for placement, and waits for the window.
-5. A sway `reload` marks the agent stale; the next call recreates the devices,
-   re-pins the layout and re-adds placement criteria.
-6. On exit the agent output is unplugged and the devices destroyed; the
-   anchor keeps its idle pointer and keyboard on the agent seat until sway
-   exits, because WezTerm drops the user's keyboard whenever any seat loses
-   one (FINDINGS I7). A sandbox removes only its own root.
+5. A sway `reload` marks the agent stale; the next call re-pins the layout,
+   parks the cursor, recreates the devices and re-adds placement criteria.
+6. On exit the devices are destroyed first, then the agent output is
+   unplugged, so the agent's cursor never lands on a user output. Nothing of
+   the agent stays on the desktop. A sandbox removes only its own root.
 
 ## Threads
 
 The main thread runs the MCP loop and owns the Wayland connection and the
 AT-SPI client. One reader thread follows the Sway event subscription and feeds
 the event log; its listeners (placement) issue IPC commands only. Nothing else
-runs concurrently in the server; the anchor is a separate detached process
-(`python -m computer_use_sway.anchor`, one per runtime directory under an
-flock).
+runs concurrently.
 
 ## Environment Recovery
 

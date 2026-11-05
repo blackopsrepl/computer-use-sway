@@ -121,9 +121,8 @@ class SeatTests(unittest.TestCase):
                 seats = {s["name"]: s for s in desktop.get_seats()}
                 return len(seats[install.SEAT]["devices"]), len(seats["seat0"]["devices"])
 
-            # The agent's pointer and keyboard plus the anchor's pair, which the
-            # anchor puts back by itself; seat0 keeps exactly what it had.
-            b.wait(lambda: counts() == (4, seat0_devices), 5)
+            # The agent's pointer and keyboard; seat0 keeps exactly what it had.
+            b.wait(lambda: counts() == (2, seat0_devices), 5)
             outs = {o["name"]: o["rect"] for o in desktop.get_outputs()}
             self.assertEqual(outs[agent.output]["x"], 100000)
             for name, (x, y) in user_outputs.items():
