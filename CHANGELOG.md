@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.0.3](https://github.com/blackopsrepl/computer-use-sway/compare/v1.0.2...v1.0.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* **agent:** keep the agent's cursor home between calls, without moving its focus cbdad9f
+* **agent:** never leave the agent's cursor on the user's screen after a call 4e4f8c7
+* **screenshot:** leave every agent output out of the default capture 885dc4a
+* **toolkits:** support kitty as the only terminal 70de726
+
+
+### Build System
+
+* one release gate whose exit status is the verdict 654004d
+
+
+### Documentation
+
+* claim what was measured, not more 98de565
+* **findings:** cite tests in the repository, not scratch probes 08531d5
+
 ## [1.0.2](https://github.com/blackopsrepl/computer-use-sway/compare/v1.0.1...v1.0.2) (2026-11-05)
 
 
