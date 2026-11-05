@@ -96,5 +96,29 @@ class RefTests(unittest.TestCase):
             self.assertEqual(caught.exception.code, "stale_ref")
 
 
+@needs_sway
+class ScreenshotTests(unittest.TestCase):
+    def test_p3_the_default_screenshot_is_the_users_outputs_only(self) -> None:
+        """Every agent output is left out, another server's included [P3]."""
+        import struct
+
+        with Box() as b:
+            b.sess.agent()
+            ipc = desktop.ipc()
+            before = {o["name"] for o in desktop.get_outputs()}
+            ipc.command("create_output")  # another server's agent output
+            other = next(o["name"] for o in desktop.get_outputs() if o["name"] not in before)
+            ipc.command(f"output {other} position 200000 0")
+            try:
+                path = f"{b.assets}/default.png"
+                b.call("screenshot", {"save_path": path})
+                with open(path, "rb") as f:
+                    head = f.read(24)
+                self.assertEqual(head[:8], b"\x89PNG\r\n\x1a\n")
+                self.assertEqual(struct.unpack(">II", head[16:24]), (1280, 800))
+            finally:
+                ipc.command(f"output {other} unplug")
+
+
 if __name__ == "__main__":
     unittest.main()

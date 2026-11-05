@@ -85,6 +85,15 @@ class ScreenshotTests(unittest.TestCase):
         with self.assertRaises(core.ToolError):
             self.shot({"save_path": "/tmp/shot.png", "output": "both"})
 
+    def test_every_agent_output_is_left_out_of_the_default_screenshot(self) -> None:
+        # Another server's agent output is as far away as our own [P3].
+        outputs = [{"name": "DP-1", "rect": {"x": 0, "y": 0}, "current_workspace": "1"},
+                   {"name": "HEADLESS-2", "rect": {"x": 100000, "y": 0}, "current_workspace": "cus-agent"},
+                   {"name": "HEADLESS-3", "rect": {"x": 100000, "y": 0}, "current_workspace": "7"},
+                   {"name": "HDMI-A-1", "rect": {"x": 1920, "y": 0}, "current_workspace": "2"}]
+        self.assertEqual(tools_observe.agent_outputs(outputs, None), {"HEADLESS-2", "HEADLESS-3"})
+        self.assertEqual(tools_observe.agent_outputs(outputs, "HEADLESS-9"), {"HEADLESS-2", "HEADLESS-3", "HEADLESS-9"})
+
     def test_region_window_and_output_are_exclusive(self) -> None:
         with self.assertRaises(core.ToolError):
             tools_observe.screenshot_region({"region": {"x": 0}, "target_output": "DP-1"})

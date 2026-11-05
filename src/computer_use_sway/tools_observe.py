@@ -86,15 +86,29 @@ def screenshot_region(arguments: dict[str, Any]) -> tuple[dict[str, int] | None,
     return desktop.validate_region(arguments.get("region")), None
 
 
+def agent_outputs(outputs: list[dict[str, Any]], own: str | None) -> set[str]:
+    """Every agent output in the layout: this server's, and any other
+    server's, recognisable by its workspace or its position (P3)."""
+    from .agent import AGENT_X, WORKSPACE
+
+    found = {own} if own else set()
+    for o in outputs:
+        if o.get("current_workspace") == WORKSPACE or (o.get("rect") or {}).get("x", 0) >= AGENT_X:
+            found.add(o.get("name"))
+    return found
+
+
 def user_area() -> dict[str, int] | None:
-    """The bounding box of the user's outputs. The agent output sits 100000 px
+    """The bounding box of the user's outputs. An agent output sits 100000 px
     away; a whole-layout capture would span the gap (a 110-megapixel image)
-    and show the user nothing they can see. None when no agent output exists."""
+    and show the user nothing they can see. That holds for an agent output of
+    another server too. None when there is no agent output to leave out."""
     sess = session.current()
-    agent_output = sess._agent.output if sess._agent is not None else None
-    if agent_output is None:
+    outputs = desktop.get_outputs()
+    excluded = agent_outputs(outputs, sess._agent.output if sess._agent is not None else None)
+    if not excluded:
         return None
-    rects = [o["rect"] for o in desktop.get_outputs() if o.get("name") != agent_output]
+    rects = [o["rect"] for o in outputs if o.get("name") not in excluded]
     if not rects:
         return None
     x0, y0 = min(r["x"] for r in rects), min(r["y"] for r in rects)
