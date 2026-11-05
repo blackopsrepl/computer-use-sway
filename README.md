@@ -52,10 +52,10 @@ Every row is a measurement; the evidence is in `docs/plan-1.0/FINDINGS.md` and
 | Agent input on its own seat does not move your focus or eat your typing | integration T4.6, 5/5 runs; benchmark: 0 focus moves and 0 lost characters over 48 runs |
 | GTK3, GTK4, Qt6, Firefox, foot, Alacritty and Ghostty accept the agent seat; Chromium, Electron and kitty are reached semantically, or through your seat only while you are idle, with your focus restored | FINDINGS I5, I7, F1 |
 | Exact Unicode text, including 8 distinct non-ASCII characters in one string, in GTK3, GTK4, Qt6, Firefox, Chromium, Electron and four terminals | FINDINGS I3, I6 |
-| The agent's cursor never appears on your screen, and an idle server leaves nothing on the desktop | FINDINGS I8 |
+| The agent's cursor is never drawn on your screen: not while a session runs, after it stops, after a restart or after a reload. The agent's output and devices exist from the server's first desktop call until the session stops or the server exits, and nothing stays after | FINDINGS I8 |
 | A runtime `swaymsg seat …` (a theme switcher's, say) never routes agent input onto your seat | FINDINGS S12, T2.4 |
 | Launched apps, their dialogs and their later windows open on the agent workspace | FINDINGS O11, O12 |
-| Clicks computed from the accessibility tree hit their target on 7 toolkits at scale 1 and 2 | FINDINGS A4, 12/12 |
+| Clicks computed from the accessibility tree hit their target in 12 of 12 cases: 7 targets at scale 1, 5 of them also at scale 2 | FINDINGS A4 |
 | OCR grounds clicks where there is no tree | FINDINGS P2, 10/10 |
 | Text entry is read back; a toolkit that reports success and changes nothing is caught | FINDINGS A7 |
 | Benchmark layer 1, 24 tasks: v1 succeeds 24/24 with you idle and 24/24 while you type; a screenshot loop with perfect grounding succeeds 24/24 and 16/24, and loses 531 of your keystrokes | `bench/results/` |

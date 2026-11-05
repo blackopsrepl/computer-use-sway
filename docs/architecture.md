@@ -42,8 +42,9 @@ Dependencies point down the table only. Every file stays under 500 lines
    re-pins the layout, parks the cursor, recreates the devices and re-adds
    placement criteria.
 6. On exit the devices are destroyed first, then the agent output is
-   unplugged, so the agent's cursor never lands on a user output. Nothing of
-   the agent stays on the desktop. A sandbox removes only its own root.
+   unplugged, so the agent's cursor never lands on a user output, and
+   nothing of the agent stays on the desktop. A sandbox removes only its own
+   root.
 
 ## Threads
 

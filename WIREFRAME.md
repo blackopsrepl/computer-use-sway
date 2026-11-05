@@ -98,8 +98,9 @@ Options (`session start`): `foreground` (`idle`\|`always`\|`never`, default
   creates the output, parks the seat's cursor on it, then creates the
   devices; stop destroys the devices, then unplugs the output; recovery after
   a reload parks the cursor before recreating them. A seat with a pointer
-  draws its own cursor, so the agent's cursor is never on the user's screen,
-  and an idle server leaves nothing on the desktop (FINDINGS I8).
+  draws its own cursor, so the agent's cursor is never on the user's screen.
+  The output and devices live from the server's first desktop call until the
+  session stops or the server exits; nothing stays after (FINDINGS I8).
 - The agent output is a headless output at x=100000; the user's outputs are
   pinned at their positions before it is created (FINDINGS O2).
 - Every agent-seat binding is followed by IPC `nop` (FINDINGS O6).
