@@ -81,8 +81,20 @@ class McpStdioTests(unittest.TestCase):
                                               "env": server_env}}}
             # JSON is YAML: no YAML writer needed.
             Path(home, "config.yaml").write_text(json.dumps(config), encoding="utf-8")
-            out = subprocess.run([hermes, "mcp", "test", "cus"], env=dict(os.environ, HERMES_HOME=home),
-                                 capture_output=True, text=True, timeout=120)
+            proc = subprocess.Popen([hermes, "mcp", "test", "cus"], env=dict(os.environ, HERMES_HOME=home),
+                                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, start_new_session=True)
+            try:
+                stdout, stderr = proc.communicate(timeout=120)
+            except subprocess.TimeoutExpired:
+                # Name what hung instead of leaving a bare timeout.
+                tree = subprocess.run(["ps", "-o", "pid,stat,wchan:20,args", "--ppid", str(proc.pid), "-p",
+                                       str(proc.pid)], capture_output=True, text=True).stdout
+                os.killpg(proc.pid, 9)
+                stdout, stderr = proc.communicate()
+                self.fail(f"hermes mcp test hung for 120 s\nprocesses:\n{tree}\nstdout:\n{stdout[-2000:]}"
+                          f"\nstderr:\n{stderr[-2000:]}")
+            out = subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
             self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
             self.assertIn("Tools discovered: 19", out.stdout)
             for name in ("observe", "act", "run", "clipboard_get"):
