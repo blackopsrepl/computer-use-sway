@@ -60,7 +60,7 @@ are logged to stderr and reported as a generic internal error.
 | `screenshot` | `window`, `target_output`, `region`, `include_cursor`, `output`, `save_path` | PNG of the user's screen by default; image content, data URL, or a `0600` file |
 | `window_tree` | `include_scratchpad`, `max_depth` | simplified Sway tree |
 | `focus_window` | selector, `seat`, `move_to_agent` | focus before and after |
-| `move_pointer`, `click`, `drag`, `scroll` | coordinates, `seat`, `verify`, gesture arguments | summary and, with `verify`, an effect |
+| `move_pointer`, `click`, `drag`, `scroll` | coordinates, `seat`, `verify`, gesture arguments | summary and, with `verify`, an effect; an agent-seat cursor moved onto a user output returns to the agent output when the call ends |
 | `type_text`, `key` | text or key + modifiers, `seat`, `verify` | characters or key sent, effect |
 | `clipboard_set`, `clipboard_get` | text or `max_bytes`, `seat` | bytes set, or the text |
 
@@ -101,6 +101,10 @@ Options (`session start`): `foreground` (`idle`\|`always`\|`never`, default
   draws its own cursor, so the agent's cursor is never on the user's screen.
   The output and devices live from the server's first desktop call until the
   session stops or the server exits; nothing stays after (FINDINGS I8).
+- The agent may act with its own pointer on a window the user sees; its
+  cursor is then on the user's screen for that call. The dispatch layer moves
+  it back to the agent output after every tool call, whether the call
+  succeeded or failed (FINDINGS I9).
 - The agent output is a headless output at x=100000; the user's outputs are
   pinned at their positions before it is created (FINDINGS O2).
 - Every agent-seat binding is followed by IPC `nop` (FINDINGS O6).

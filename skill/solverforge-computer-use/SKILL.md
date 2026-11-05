@@ -37,6 +37,9 @@ here. The repository's WIREFRAME.md is the full contract.
 
 ## Things to know
 
+- A pointer action with your seat on a window the user sees shows your cursor
+  there for that call only; it returns to your output when the call ends, so
+  hover on the user's screen does not persist between calls.
 - Elements marked `[offscreen]` are scrolled out of view: semantic actions
   (`select`, `press`, `set_text`) still reach them; pointer actions do not.
 - Elements marked `[popup]` sit in a menu whose position no one reports: press

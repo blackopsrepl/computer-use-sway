@@ -32,7 +32,7 @@ def specs() -> list[dict[str, Any]]:
         },
         {
             "name": "move_pointer",
-            "description": "Move a seat's pointer in layout coordinates.",
+            "description": "Move a seat's pointer in layout coordinates. The agent seat's cursor never stays on the user's screen: when the call ends it returns to the agent output, so hover over a window the user sees lasts only for the call.",
             "annotations": ACTING,
             "inputSchema": {
                 "type": "object",

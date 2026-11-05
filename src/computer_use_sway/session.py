@@ -245,6 +245,20 @@ def _stop_at_exit() -> None:
             core.eprint(f"session stop at exit failed: {exc!r}")
 
 
+def park_agent_pointer() -> None:
+    """After every tool call: the agent's cursor never stays on a user output
+    (FINDINGS I9). Never raises; a failure is logged and the next call's
+    recovery parks it."""
+    sess = _current
+    agent_ = sess._agent if sess is not None else None
+    if agent_ is None:
+        return
+    try:
+        agent_.park_pointer()
+    except Exception as exc:  # noqa: BLE001 - parking must never fail a call
+        core.eprint(f"could not park the agent pointer: {exc!r}")
+
+
 def current() -> Session:
     global _current
     if _current is None:

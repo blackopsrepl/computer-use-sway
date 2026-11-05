@@ -19,7 +19,9 @@ a measured trap (docs/plan-1.0/FINDINGS.md):
   cursor is parked on that output before the pointer appears: a seat with a
   pointer draws its own cursor, and with no agent output sway puts it on the
   user's screen (I8). Start creates the output first; stop removes the
-  devices first.
+  devices first. A pointer action on a user output (a click on a visible
+  window) shows the agent's cursor there for that call only: the dispatch
+  layer parks it back after every tool call (I9).
 """
 
 from __future__ import annotations
@@ -134,6 +136,24 @@ class Agent:
         rect = next(o["rect"] for o in self._outputs() if o["name"] == self.output)
         self.ipc.command(f"seat {install.SEAT} cursor set "
                          f"{rect['x'] + rect['width'] // 2} {rect['y'] + rect['height'] // 2}")
+
+    def park_pointer(self) -> bool:
+        """Bring the agent's cursor home after a tool call that left it on a
+        user output. Returns whether it moved. Moving the virtual pointer, not
+        warping the seat, keeps its recorded position true."""
+        if not self.started or self.stale or self.devices is None or self.output is None:
+            return False
+        pointer = self.devices.pointer
+        if pointer.position is None:
+            return False  # never moved: still where start parked it
+        rect = next((o["rect"] for o in self._outputs() if o["name"] == self.output), None)
+        if rect is None:
+            return False
+        x, y = pointer.position
+        if rect["x"] <= x < rect["x"] + rect["width"] and rect["y"] <= y < rect["y"] + rect["height"]:
+            return False
+        pointer.move_to(rect["x"] + rect["width"] // 2, rect["y"] + rect["height"] // 2)
+        return True
 
     def _place_agent(self) -> None:
         assert self.output is not None

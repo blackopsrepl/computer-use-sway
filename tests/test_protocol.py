@@ -144,5 +144,18 @@ class ProtocolTests(unittest.TestCase):
                     self.assertEqual(cli.command_argv(), [str(script)])
 
 
+class ParkingTests(unittest.TestCase):
+    def test_every_tool_call_parks_the_agent_pointer_even_when_it_fails(self) -> None:
+        def boom(_arguments: dict) -> list:
+            raise core.ToolError("no", code="x")
+
+        with patch.object(server.session, "park_agent_pointer") as park, \
+                patch.dict(server.TOOLS, {"ok": lambda _a: [], "boom": boom}):
+            server.call_tool("ok", {})
+            with self.assertRaises(core.ToolError):
+                server.call_tool("boom", {})
+        self.assertEqual(park.call_count, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

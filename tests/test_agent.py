@@ -52,10 +52,21 @@ class FakeKeyboard:
         self.log.append(f"key:{key}")
 
 
+class FakePointer:
+    def __init__(self, log: list[str]) -> None:
+        self.log = log
+        self.position: tuple[int, int] | None = None
+
+    def move_to(self, x: int, y: int) -> None:
+        self.position = (x, y)
+        self.log.append(f"pointer:{x},{y}")
+
+
 class FakeDevices:
     def __init__(self, log: list[str]) -> None:
         self.log = log
         self.keyboard = FakeKeyboard(log)
+        self.pointer = FakePointer(log)
         self.recreated = 0
 
     def recreate(self) -> None:
@@ -90,6 +101,19 @@ class AgentTests(unittest.TestCase):
         cmds.clear()
         self.agent.stop()
         self.assertLess(cmds.index("devices:destroy"), cmds.index('output "HEADLESS-1" unplug'))
+
+    def test_a_pointer_left_on_a_user_output_is_parked_back(self) -> None:
+        # A click on a visible window leaves the agent's cursor there [I9].
+        self.agent.start()
+        self.assertFalse(self.agent.park_pointer())  # never moved
+        self.devices.pointer.move_to(2000, 600)  # on the agent output
+        self.assertFalse(self.agent.park_pointer())
+        self.devices.pointer.move_to(232, 405)  # on the user's DP-1
+        self.assertTrue(self.agent.park_pointer())
+        self.assertEqual(self.devices.pointer.position, (2880, 540))
+        self.agent._on_event("workspace", {"change": "reload"})
+        self.devices.pointer.move_to(232, 405)
+        self.assertFalse(self.agent.park_pointer())  # stale: recovery parks it instead
 
     def test_reload_parks_the_cursor_before_the_devices_return(self) -> None:
         self.agent.start()
