@@ -73,11 +73,16 @@ Run:
 ```bash
 make check        # unit tests, bytecode compilation, file-length check
 make integration  # sandbox sways: needs sway, grim, tesseract, at-spi2-core and the test apps
-make bench        # benchmark layer 1; its gate must report "gate: ok"
+make bench        # benchmark layer 1; exits non-zero when its gate fails
+make release-gate # check, integration, bench and no sandbox leftovers
 ```
 
-`make check` gates every commit. `make integration` and `make bench` gate a
-release and any change to delivery, perception or the agent seat. A design
+`make check` gates every commit; `make release-gate` gates every release and
+any change to delivery, perception or the agent seat. A gate's verdict is its
+exit status. Do not pipe a gate through `grep`, `head` or `tail`, or append
+commands after it, when you judge it: a pipeline reports its last command's
+status, and a failure then reads as a pass. Save the full log and read the
+status. A design
 claim belongs in `docs/plan-1.0/FINDINGS.md` with the test that measures it.
 
 ## Documentation Surfaces

@@ -1,6 +1,6 @@
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
-.PHONY: check test py-compile lint-files integration bench doctor build clean
+.PHONY: check test py-compile lint-files integration bench leftovers release-gate doctor build clean
 
 check: test py-compile lint-files
 
@@ -18,6 +18,12 @@ integration:
 
 bench:
 	PYTHONPATH=src $(PYTHON) -m bench.run
+
+leftovers:
+	$(PYTHON) scripts/check_sandbox_leftovers.py
+
+# The release verdict is this target's exit status, and nothing else.
+release-gate: check integration bench leftovers
 
 doctor:
 	PYTHONPATH=src $(PYTHON) -m computer_use_sway --doctor
