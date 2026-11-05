@@ -36,8 +36,11 @@ Dependencies point down the table only. Every file stays under 500 lines
    AT-SPI events, Sway events and pixels.
 4. `launch` writes the launcher script, fires the agent's launcher binding,
    registers the reported child pid for placement, and waits for the window.
-5. A sway `reload` marks the agent stale; the next call re-pins the layout,
-   parks the cursor, recreates the devices and re-adds placement criteria.
+5. A sway `reload` marks the agent stale, and so does finding its devices off
+   the agent seat, which every input message checks first (a runtime `seat`
+   command moves them to seat0 without an event, FINDINGS S12). The next call
+   re-pins the layout, parks the cursor, recreates the devices and re-adds
+   placement criteria.
 6. On exit the devices are destroyed first, then the agent output is
    unplugged, so the agent's cursor never lands on a user output. Nothing of
    the agent stays on the desktop. A sandbox removes only its own root.

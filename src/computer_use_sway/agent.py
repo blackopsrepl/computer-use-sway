@@ -4,8 +4,11 @@ One owner for everything the agent uses beside the user. Every rule here is
 a measured trap (docs/plan-1.0/FINDINGS.md):
 
 - the seat is config-declared, never created at runtime (S7);
-- after `reload` the devices fall back to seat0 and must be recreated on the
-  same wl_seat before any further input (S8);
+- after `reload`, and after any runtime `seat ...` command (even one for
+  seat0 or `seat *`), sway re-sorts devices by attach rules and the agent's
+  virtual devices fall back to seat0, with no IPC event (S8, S12). Input is
+  therefore gated on the agent seat holding its devices, checked before every
+  message, and they are recreated on the agent seat before any further input;
 - every agent binding is followed by an IPC `nop`, or a view mapping from it
   focuses *all* seats (O6);
 - user outputs are pinned at their current position before `create_output`,
@@ -97,10 +100,18 @@ class Agent:
             self.stale = "shutdown"
 
     def gate(self) -> None:
+        """Called before every input message. Never let agent input reach the
+        user's seat: a `seat` command moves the devices there silently [S12]."""
+        if not self.stale and self.devices is not None and not self._holds_devices():
+            self.stale = "moved"
         if self.stale:
+            cause = "a sway reload" if self.stale == "reload" else "a sway seat change"
             raise vinput.AgentSeatLost(
-                "agent seat lost to a sway reload; retrying after recovery", code="agent_seat_lost"
+                f"agent seat lost its devices to {cause}; retrying after recovery", code="agent_seat_lost"
             )
+
+    def _holds_devices(self) -> bool:
+        return len((self._seat(install.SEAT) or {}).get("devices", [])) >= 2
 
     # -- helpers -------------------------------------------------------------
     def _seat(self, name: str) -> dict[str, Any] | None:
@@ -196,8 +207,11 @@ class Agent:
             return
         if self.stale == "shutdown":
             raise core.ToolError("sway is shutting down or the IPC socket was lost", code="sway_gone")
-        if self.stale == "reload":
-            # After a reload the agent's devices sit on seat0 [S8]; recreating
+        if not self.stale and self.devices is not None and not self._holds_devices():
+            self.stale = "moved"
+        if self.stale in ("reload", "moved"):
+            # After a reload or a seat change the agent's devices sit on seat0
+            # [S8, S12]; recreating
             # them on the agent seat must leave seat0 with no more devices than
             # it has right now.
             user_before = len((self._seat(self.user_seat) or {}).get("devices", []))

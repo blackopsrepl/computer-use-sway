@@ -112,6 +112,10 @@ Options (`session start`): `foreground` (`idle`\|`always`\|`never`, default
 - After a sway `reload` the server recreates the devices on the agent seat,
   re-pins outputs and the workspace, and re-adds placement criteria for live
   agent processes.
+- Any runtime `seat` command (`seat * xcursor_theme …`, for one) moves the
+  agent's devices to seat0 without an event. Every input message is gated on
+  the agent seat holding its devices; when it does not, input stops before
+  it can reach the user's seat and the devices are recreated (FINDINGS S12).
 
 ## Delivery and Verdicts
 

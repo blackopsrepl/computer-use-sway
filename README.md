@@ -53,6 +53,7 @@ Every row is a measurement; the evidence is in `docs/plan-1.0/FINDINGS.md` and
 | GTK3, GTK4, Qt6, Firefox, foot, Alacritty and Ghostty accept the agent seat; Chromium, Electron and kitty are reached semantically, or through your seat only while you are idle, with your focus restored | FINDINGS I5, I7, F1 |
 | Exact Unicode text, including 8 distinct non-ASCII characters in one string, in GTK3, GTK4, Qt6, Firefox, Chromium, Electron and four terminals | FINDINGS I3, I6 |
 | The agent's cursor never appears on your screen, and an idle server leaves nothing on the desktop | FINDINGS I8 |
+| A runtime `swaymsg seat …` (a theme switcher's, say) never routes agent input onto your seat | FINDINGS S12, T2.4 |
 | Launched apps, their dialogs and their later windows open on the agent workspace | FINDINGS O11, O12 |
 | Clicks computed from the accessibility tree hit their target on 7 toolkits at scale 1 and 2 | FINDINGS A4, 12/12 |
 | OCR grounds clicks where there is no tree | FINDINGS P2, 10/10 |

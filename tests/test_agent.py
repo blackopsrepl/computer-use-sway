@@ -132,6 +132,26 @@ class AgentTests(unittest.TestCase):
         self.assertIn('output "HEADLESS-1" position 100000 0 resolution 1920x1080', self.ipc.commands)
         self.agent.gate()
 
+    def test_a_seat_change_that_moves_the_devices_gates_input_and_recovers(self) -> None:
+        # Any runtime `seat ...` command re-sorts devices and the agent's fall
+        # back to seat0 with no event [S12]: input must stop before it reaches
+        # the user's seat, and the next call recovers.
+        self.agent.start()
+        seats = self.ipc.seat_list
+        seats[1]["devices"], seats[0]["devices"] = [], seats[0]["devices"] + [8, 9]
+        with self.assertRaises(vinput.AgentSeatLost):
+            self.agent.gate()
+
+        def recreate_on_agent_seat() -> None:
+            self.devices.recreated += 1
+            seats[0]["devices"], seats[1]["devices"] = seats[0]["devices"][:-2], [10, 11]
+
+        self.devices.recreate = recreate_on_agent_seat
+        self.agent.ensure_ready()
+        self.assertEqual(self.devices.recreated, 1)
+        self.assertIsNone(self.agent.stale)
+        self.agent.gate()
+
     def test_recovery_refuses_when_devices_land_on_seat0(self) -> None:
         self.agent.start()
         self.agent._on_event("workspace", {"change": "reload"})

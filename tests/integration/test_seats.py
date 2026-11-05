@@ -99,6 +99,31 @@ class SeatTests(unittest.TestCase):
             b.user_keyboard().type_text("u2")
             b.wait(lambda: b.text_of("A") == "u1u2", 5)
 
+    def test_t2_4_a_seat_command_never_routes_agent_input_to_the_user(self) -> None:
+        # Any runtime `seat ...` command re-sorts devices and the agent's fall
+        # back to seat0 with no IPC event [S12].
+        with Box() as b:
+            a = b.oracle("A")
+            b.user_pointer().click(*b.center_of(a, "A", "entry"))
+            focus = b.seat_focus()
+            app = b.launch("gtk3")
+            seat0_devices = len(next(s for s in desktop.get_seats() if s["name"] == "seat0")["devices"])
+            typed = ""
+            for cmd in ("seat * xcursor_theme default 24", "seat seat0 hide_cursor 3000",
+                        f"seat {install.SEAT} xcursor_theme default 24"):
+                with self.subTest(command=cmd):
+                    desktop.ipc().command(cmd)
+                    out = b.call("act", {"target": {"query": {"role": "entry", "name": "Field",
+                                                              "window": {"con_id": app["id"]}}},
+                                         "action": "type", "text": "S"})
+                    typed += "S"
+                    self.assertIn(out["effect"], ("confirmed", "changed"), out)
+                    self.assertEqual(b.title(app["id"]), "T:" + typed)
+                    self.assertEqual(b.text_of("A"), "")  # nothing reached the user's field
+                    self.assertEqual(b.seat_focus(), focus)
+                    seats = {s["name"]: len(s["devices"]) for s in desktop.get_seats()}
+                    self.assertEqual((seats[install.SEAT], seats["seat0"]), (2, seat0_devices))
+
     def test_t2_3_reload_recovery(self) -> None:
         with Box() as b:
             a = b.oracle("A")

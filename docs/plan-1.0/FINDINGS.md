@@ -28,6 +28,7 @@ fully reverted). Everything else ran in the sandbox.
 | S9 | `reload` emits IPC `workspace` event `change:"reload"` within ~5 ms. The workspace↔output pin and runtime bindings are dropped; runtime-created outputs survive. | spike7 `R4_events`; spike7b `reload_event_ms` |
 | S10 | The wl_seat global for a newly created seat arrives **after** the IPC reply. A client must roundtrip/poll until it appears. | spike7b `KeyError` before the wait was added |
 | S11 | Per-seat idle works: `ext_idle_notifier_v1.get_idle_notification(timeout, seat)` reports `idled`/`resumed` per seat. Agent input does not resume seat0. | spike12 `pass` |
+| S12 | **Any runtime `seat` command moves the agent's virtual devices to seat0**, with no IPC event: `seat * xcursor_theme …`, `seat seat0 hide_cursor …` and `seat cus-agent …` alike (theme switchers run the first). Applying a seat config re-sorts every device by attach rules (`input_manager_apply_seat_config`), and virtual devices, whose identifiers are fixed strings, match none and fall back to seat0; `input * …` does not. Until 1.0.1 the agent kept typing through the moved devices, onto the user's seat. Input is now gated on the agent seat holding its devices (one `get_seats`, 0.055 ms, before every message) and they are recreated on the agent seat first. 1.0.1 fails all three commands; the fix passes, with nothing reaching the user's field and seat0's focus unchanged. | `tests/integration/test_seats.py` T2.4 |
 
 ## 2. Agent output and launching
 

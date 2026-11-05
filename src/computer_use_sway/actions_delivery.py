@@ -111,7 +111,8 @@ def _type(keyboard: Any, text: str) -> None:
     except AgentSeatLost as exc:
         if sent:
             raise core.ToolError(
-                f"typing interrupted by a sway reload after {sent} of {len(text)} characters; not retyped",
+                f"typing interrupted after {sent} of {len(text)} characters: the agent seat lost its "
+                f"devices to a sway reload or seat change; not retyped",
                 code="partial_input",
             ) from exc
         raise
