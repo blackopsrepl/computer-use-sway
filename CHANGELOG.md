@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.0.0](https://github.com/blackopsrepl/computer-use-sway/compare/v0.3.2...v1.0.0) (2026-11-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* wtype and /dev/uinput are no longer used; the agent seat needs
+a one-time `computer-use-sway --install-sway-config`; input defaults to the
+agent seat in seat mode; input tool results gain effect/evidence/seat.
+
+### Features
+
+* **action:** observe scenes, effect verdicts, delivery ladder, launch, waits, run plans 8fff356
+* agent-seat tool surface with observe, act, run, launch and verdicts f301d38
+* **agent:** anchor the agent seat's devices for the life of the sway session c4fc579
+* **agent:** config-declared agent seat, off-screen agent output, idle sentinel, sandbox d18e64a
+* **agent:** keep an agent-launched app's later windows on the agent workspace f936182
+* **bench:** scripted benchmark (make bench) and the real-agent harness e4b8969
+* **perception:** AT-SPI client, toolkit profiles, geometry, capture, OCR ensemble, refs 7a0e8bd
+* **transport:** stdlib Sway IPC, Wayland wire, virtual seat input and D-Bus clients 674cdad
+
+
+### Bug Fixes
+
+* **act:** escalate set_text past a failed readback and fall back to press for blocked clicks dedd0b2
+* **act:** press GTK3 widgets through the pointer; skip apps stalled in a modal loop 25f4b1c
+* **act:** read element bounds right before pointer input; launch returns settled geometry a75526d
+* **agent:** judge reload recovery against seat0's device count at recovery time c1033b7
+* **bench:** give each layer-2 sandbox the user's idle hardware on seat0 707d526
+* **capture:** treat a blinking caret as noise; OCR refs compare their own box 9d7c6d9
+* **keymap:** bind special keysyms to F13-F24 slots so Chromium and Electron receive them 92aa79f
+* **keymap:** type characters on keys that Ghostty and Chromium both read as text e7a14fa
+* **launch:** keep sway's activation token so every toolkit maps on the agent workspace 7e5d162
+* **launch:** return only once the tree is populated and no page is loading a26b406
+* **launch:** run apps under a subreaper so sway's pid placement holds for Electron c199115
+* **observe:** reach what the benchmark showed missing, structure before pixels c6ded11
+* **ocr:** keep one reading per spot instead of joining the variants' readings ee7094f
+* **query:** a role matches its family in either spelling fc766f3
+* **sandbox:** reap every sandbox process before removing its root e8d2fcb
+* **sandbox:** tear down when the process is terminated 3ce5957
+* **screenshot:** capture the user's outputs by default ff5f2a2
+* **sentinel:** restore the user's focus by workspace name when it was empty a136c67
+* **tests:** keep spike and Electron-oracle artefacts in the XDG cache c3125b3
+* **toolkits:** measured terminal profiles d476f9a
+
+
+### Documentation
+
+* **bench:** layer-2 result: all arms 24/24, v1 at 1.86 M tokens and $2.08 765587d
+* **findings:** O12, A12-A14, P3, P4, I6, I7 with the tests that measure them 2e4b239
+* module docstrings for core and desktop 4b76cfa
+* **plan:** proven 1.0 implementation plan for a Sway-native agent seat 6963488
+* the 1.0 surface, architecture, operating procedure and repository rules 1deae3d
+
 ## [0.3.2](https://github.com/blackopsrepl/computer-use-sway/compare/v0.3.1...v0.3.2) (2026-10-04)
 
 
