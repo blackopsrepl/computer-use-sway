@@ -91,8 +91,8 @@ Options (`session start`): `foreground` (`idle`\|`always`\|`never`, default
   by `computer-use-sway --install-sway-config`; it is never created at runtime
   (a runtime seat dies on `reload`, FINDINGS S7).
 - Virtual pointer and keyboard are bound to that `wl_seat` over a stdlib
-  Wayland client. GTK3, GTK4, Qt6, Firefox, foot, Alacritty and Ghostty accept
-  them; Chromium, Electron and kitty do not (FINDINGS I5, I7) and are reached
+  Wayland client. GTK3, GTK4, Qt6 and Firefox accept them; Chromium,
+  Electron and kitty do not (FINDINGS I5) and are reached
   semantically or through the foreground step.
 - The agent seat has devices only while the agent output exists. Start
   creates the output, parks the seat's cursor on it, then creates the

@@ -95,9 +95,7 @@ class ToolkitTests(unittest.TestCase):
     def test_classify(self) -> None:
         cases = [(("gtk", None, "3.24"), "gtk3"), (("GTK", None, None), "gtk4"), (("gtk", None, "4.14"), "gtk4"),
                  (("Qt", None, None), "qt"), (("Gecko", None, None), "gecko"), (("Chromium", None, None), "chromium"),
-                 ((None, "kitty", None), "terminal"), ((None, "org.wezfurlong.wezterm", None), "terminal"),
-                 ((None, "foot", None), "terminal-seat"), ((None, "Alacritty", None), "terminal-seat"),
-                 (("GTK", "com.mitchellh.ghostty", "4.18.6"), "terminal-seat"),
+                 ((None, "kitty", None), "terminal"), ((None, "Kitty", None), "terminal"),
                  ((None, "md.obsidian.Obsidian", None), "chromium"),
                  ((None, "org.gnome.Foo", None), "unknown")]
         for (name, app_id, version), want in cases:

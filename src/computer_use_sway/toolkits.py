@@ -29,16 +29,13 @@ PROFILES = {
     "qt": Profile("qt", True, "reliable", False, False, (), True),
     "gecko": Profile("gecko", True, "lies", False, True, (), True),
     "chromium": Profile("chromium", False, "absent", True, None, ("--force-renderer-accessibility",), False),
-    # Terminals [I5, I7]: kitty and WezTerm ignore a second seat's input;
-    # foot, Alacritty and Ghostty accept the agent seat. None exposes its text.
+    # kitty, the supported terminal [I5]: ignores a second seat's input and
+    # exposes no text.
     "terminal": Profile("terminal", False, "absent", False, None, (), False),
-    "terminal-seat": Profile("terminal-seat", True, "absent", False, None, (), False),
     "unknown": Profile("unknown", None, "absent", False, None, (), False),
 }
 
-SINGLE_SEAT_TERMINALS = {"kitty", "org.wezfurlong.wezterm"}
-SEAT_TERMINALS = {"foot", "footclient", "alacritty", "com.mitchellh.ghostty"}
-TERMINALS = SINGLE_SEAT_TERMINALS | SEAT_TERMINALS
+TERMINALS = {"kitty"}
 ELECTRON_APPS = {"md.obsidian.obsidian", "obsidian", "discord", "com.nousresearch.hermes", "code", "slack",
                  "code-oss", "vscodium", "signal", "element"}
 CHROMIUM_HINTS = ("chrom", "electron", "brave", "vivaldi", "msedge")
@@ -55,17 +52,14 @@ def _terminal(app_id: str | None, argv0: str | None) -> Profile | None:
     for candidate in (app_id, argv0):
         if candidate:
             base = candidate.lower().rsplit("/", 1)[-1]
-            if base in SEAT_TERMINALS:
-                return PROFILES["terminal-seat"]
-            if base in SINGLE_SEAT_TERMINALS:
+            if base in TERMINALS:
                 return PROFILES["terminal"]
     return None
 
 
 def classify(toolkit_name: str | None, app_id: str | None, argv0: str | None = None,
              toolkit_version: str | None = None) -> Profile:
-    # A terminal before its toolkit: Ghostty is GTK4 on the bus, but its
-    # terminal surface has no text interface and its own seat behaviour.
+    # A terminal before its toolkit: its surface has no text interface.
     terminal = _terminal(app_id, argv0)
     if terminal is not None:
         return terminal

@@ -1,6 +1,6 @@
-"""Terminals: which seats each accepts, and exact text through them
-(FINDINGS I5, I6). Each terminal runs `cat` into a file, so the file holds
-exactly what the terminal received from the keyboard."""
+"""kitty, the supported terminal: exact text on the user's seat, and nothing
+from the agent seat, which kitty ignores (FINDINGS I5, I6). kitty runs `cat`
+into a file, so the file holds exactly what kitty received."""
 
 from __future__ import annotations
 
@@ -20,14 +20,11 @@ TEXT = "Ab9 !@#$%^&*()_+{}|:\"<>? é ü ß 日本 € ñ Ω"
 def argv(name: str, command: str) -> list[str]:
     return {
         "kitty": ["kitty", "sh", "-c", command],
-        "foot": ["foot", "sh", "-c", command],
-        "alacritty": ["alacritty", "-e", "sh", "-c", command],
-        "ghostty": ["ghostty", "-e", "sh", "-c", command],
     }[name]
 
 
-# Measured: kitty ignores input from a non-default seat; the others accept it.
-AGENT_SEAT = {"kitty": False, "foot": True, "alacritty": True, "ghostty": True}
+# Measured: kitty ignores input from a non-default seat.
+AGENT_SEAT = {"kitty": False}
 
 
 def received(path: Path) -> str:
