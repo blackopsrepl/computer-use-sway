@@ -6,7 +6,7 @@
 # resources/app is replaced by targets.py's tiny main.js (written at run time).
 set -eu
 SRC=${1:?usage: make_electron_oracle.sh <electron app dir>}
-DST="$HOME/.hermes/cache/scratch/electron-oracle"
+DST="${XDG_CACHE_HOME:-$HOME/.cache}/computer-use-sway/electron-oracle"
 BIN=$(find "$SRC" -maxdepth 1 -type f -perm -u+x ! -name '*.so*' ! -name 'chrome*' ! -name '*-cli' | head -1)
 [ -n "$BIN" ] || { echo "no Electron binary found in $SRC" >&2; exit 1; }
 rm -rf -- "$DST"

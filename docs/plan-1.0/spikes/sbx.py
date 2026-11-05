@@ -12,7 +12,9 @@ import shutil
 import subprocess
 import time
 
-SCRATCH = os.path.expanduser("~/.hermes/cache/scratch")
+# Spike roots and artefacts; CUS_SPIKE_SCRATCH overrides.
+SCRATCH = os.environ.get("CUS_SPIKE_SCRATCH") or os.path.join(
+    os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "computer-use-sway", "spikes")
 
 BASE_CONFIG = """xwayland disable
 output HEADLESS-1 resolution 1280x800 position 0 0

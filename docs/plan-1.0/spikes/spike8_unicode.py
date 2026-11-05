@@ -45,7 +45,7 @@ for name in sys.argv[1:] or ["gtk3", "gtk4", "qt6", "firefox"]:
                 steps[chunk] = next(w.get("name") for w in s.windows() if w["id"] == win["id"])
             r["firefox_steps"] = steps
             import subprocess
-            subprocess.run(["grim", os.path.expanduser("~/.hermes/cache/scratch/ff8.png")], env=s.env)
+            subprocess.run(["grim", os.path.join(sbx.SCRATCH, "ff8.png")], env=s.env)
             ak.chord("a", ["ctrl"]); ak.chord("BackSpace"); time.sleep(0.3)
         ak.type(TEXT)
         time.sleep(0.6)

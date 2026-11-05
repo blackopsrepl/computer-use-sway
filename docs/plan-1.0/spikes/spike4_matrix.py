@@ -4,6 +4,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
+import sbx  # noqa: E402
 from spike4_a11y import run  # noqa: E402
 
 CASES = [a.split(":") for a in sys.argv[1:]]  # name[:scale[:floating[:status]]]
@@ -30,7 +31,7 @@ for case in CASES:
           f" | frameW={ext.get('frame_window')} frameS={ext.get('frame_screen')} btnW={ext.get('button_window')}"
           f" btnS={ext.get('button_screen')} geo={r.get('sway', {}).get('geometry')} wr={r.get('sway', {}).get('window_rect')}"
           f" {('ERR ' + r['error'][:200]) if r.get('error') else ''}", flush=True)
-out = os.path.expanduser("~/.hermes/cache/scratch/spike4-results.jsonl")
+out = os.path.join(sbx.SCRATCH, "spike4-results.jsonl")
 with open(out, "a") as f:
     for r in results:
         f.write(json.dumps(r, default=str) + "\n")

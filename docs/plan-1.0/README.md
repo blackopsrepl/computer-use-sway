@@ -39,9 +39,11 @@ with it.
 
 Requirements for the runner: sway, grim, at-spi2-core, `/usr/bin/python3`
 with `gi` (GTK3/GTK4 typelibs), qml6, firefox, chromium, tesseract. The
-Electron claims use a bare Electron oracle. Build it first (the scratch dir
-is pruned after 24 h idle): `spikes/make_electron_oracle.sh <dir of any
-Electron app runtime>`, e.g. the Obsidian install directory.
+Electron claims use a bare Electron oracle. Build it first, into
+`${XDG_CACHE_HOME:-~/.cache}/computer-use-sway/electron-oracle` (or point
+`CUS_TEST_ELECTRON` at one): `spikes/make_electron_oracle.sh <dir of any
+Electron app runtime>`, e.g. the Obsidian install directory. Spike roots go
+under `.../computer-use-sway/spikes` (`CUS_SPIKE_SCRATCH` overrides).
 
 ## Rules for the implementer
 

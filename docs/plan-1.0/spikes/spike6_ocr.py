@@ -45,7 +45,7 @@ with sbx.Sandbox(f"spike6-{name}", extra_config=extra) as s:
     ppm = subprocess.run(["grim", "-t", "ppm", "-s", "2", "-g", f"{gx},{gy} {gw}x{gh}", "-"], env=s.env,
                          check=True, capture_output=True).stdout
     open(png, "wb").write(ppm)
-    import shutil; shutil.copy(png, os.path.expanduser(f"~/.hermes/cache/scratch/ocr-{name}-{scale}.png"))
+    import shutil; shutil.copy(png, os.path.join(sbx.SCRATCH, f"ocr-{name}-{scale}.png"))
     import ocr
     t1 = time.monotonic()
     found = ocr.run(ppm)

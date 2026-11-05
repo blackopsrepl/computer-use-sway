@@ -8,8 +8,8 @@ import os
 
 PY = "/usr/bin/python3"
 # Build with docs/plan-1.0/spikes/make_electron_oracle.sh, or point CUS_TEST_ELECTRON at one.
-ELECTRON = os.environ.get("CUS_TEST_ELECTRON") or os.path.expanduser(
-    "~/.hermes/cache/scratch/electron-oracle/electron-oracle")
+CACHE = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "computer-use-sway")
+ELECTRON = os.environ.get("CUS_TEST_ELECTRON") or os.path.join(CACHE, "electron-oracle", "electron-oracle")
 
 HTML = """<!doctype html><title>T:</title>
 <body style="margin:0;font-size:32px">

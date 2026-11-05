@@ -12,6 +12,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(__file__))
 import sbx  # noqa: E402
+import targets  # noqa: E402
 import wl  # noqa: E402
 from spike1_seats_lib import PY, HERE, center, last_geo, text_of, type_text, click  # noqa: E402
 
@@ -63,7 +64,7 @@ def apps(root):
         "chromium": ["chromium", "--ozone-platform=wayland", f"--user-data-dir={root}/chr",
                      "--no-first-run", "--no-default-browser-check", f"--app={PAGE}"],
         "firefox": ["firefox", "--no-remote", "--new-instance", "--profile", prof, page_file(root)],
-        "electron": ["/home/pvd/.hermes/cache/scratch/electron-oracle/electron-oracle", "--ozone-platform=wayland",
+        "electron": [targets.ELECTRON, "--ozone-platform=wayland",
                      f"--user-data-dir={root}/el"],
         "kitty": ["kitty", "--class", "kitty-oracle", "-o", "linux_display_server=wayland", "sh", "-c", KITTY_SH],
     }
