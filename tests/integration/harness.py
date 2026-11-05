@@ -35,6 +35,13 @@ def available(name: str) -> bool:
     return bool(shutil.which(binary) or os.access(binary, os.X_OK))
 
 
+def require(case: unittest.TestCase, name: str) -> None:
+    """Skip, visibly, a case whose app is not installed: a matrix that passed
+    over missing apps in silence could pass having checked nothing."""
+    if not available(name):
+        case.skipTest(f"{name} is not installed")
+
+
 def needs_sway(cls: type) -> type:
     return unittest.skipUnless(shutil.which("sway") and shutil.which("dbus-daemon") and shutil.which("grim"),
                                "needs sway, dbus-daemon and grim")(cls)

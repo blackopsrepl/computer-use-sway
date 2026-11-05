@@ -59,10 +59,10 @@ class TerminalTests(unittest.TestCase):
 
     def test_i6_each_terminal_receives_exact_text_on_its_seats(self) -> None:
         for name, agent_ok in AGENT_SEAT.items():
-            if shutil.which(name) is None:
-                continue
             for seat in ("user", "agent"):
                 with self.subTest(terminal=name, seat=seat):
+                    if shutil.which(name) is None:
+                        self.skipTest(f"{name} is not installed")
                     expect = "" if seat == "agent" and not agent_ok else TEXT
                     self.assertEqual(self.check(name, seat, expect), expect)
 

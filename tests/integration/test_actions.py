@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from computer_use_sway import capture, core, desktop
 
-from harness import Box, available, needs_sway
+from harness import Box, available, needs_sway, require
 
 FOREGROUND = {"idle_ms": 300, "idle_max_wait_ms": 8000}
 
@@ -159,18 +159,18 @@ class RunTests(unittest.TestCase):
 class ForegroundTests(unittest.TestCase):
     def test_t4_5_single_seat_typing_borrows_and_returns_the_user_seat(self) -> None:
         for name in ("chromium", "electron"):
-            if not available(name):
-                continue
-            with self.subTest(name), Box(options=FOREGROUND) as b:
-                a = b.oracle("A")
-                b.user_pointer().click(*b.center_of(a, "A", "entry"))
-                b.user_keyboard().type_text("before")
-                win = b.launch(name)
-                out = b.call("act", {"target": field(win), "action": "type", "text": "wörld"})
-                self.assertEqual((out["delivery"], out["effect"]), ("foreground", "confirmed"), out)
-                self.assertEqual(b.seat_focus("seat0"), a["id"])
-                b.user_keyboard().type_text("after")
-                b.wait(lambda: b.text_of("A") == "beforeafter", 5)
+            with self.subTest(name):
+                require(self, name)
+                with Box(options=FOREGROUND) as b:
+                    a = b.oracle("A")
+                    b.user_pointer().click(*b.center_of(a, "A", "entry"))
+                    b.user_keyboard().type_text("before")
+                    win = b.launch(name)
+                    out = b.call("act", {"target": field(win), "action": "type", "text": "wörld"})
+                    self.assertEqual((out["delivery"], out["effect"]), ("foreground", "confirmed"), out)
+                    self.assertEqual(b.seat_focus("seat0"), a["id"])
+                    b.user_keyboard().type_text("after")
+                    b.wait(lambda: b.text_of("A") == "beforeafter", 5)
 
 
 if __name__ == "__main__":

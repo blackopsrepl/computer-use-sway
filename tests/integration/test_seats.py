@@ -7,7 +7,7 @@ import unittest
 
 from computer_use_sway import core, desktop, install, vinput
 
-from harness import Box, available, needs_sway
+from harness import Box, needs_sway, require
 
 
 @needs_sway
@@ -48,19 +48,19 @@ class TransportTests(unittest.TestCase):
         # so the keymap is rebound mid-text [I3, I6].
         text = "Ab9 !@#$%^&*()_+{}|:\"<>? é ü ß 日本 € ñ Ω"
         for name in ("gtk3", "gtk4", "qt6", "firefox", "chromium", "electron"):
-            if not available(name):
-                continue
-            with self.subTest(name), Box() as b:
-                win = b.launch(name)
-                ref = b.ref(win["id"], "Field")
-                bounds = b.call("read", {"ref": ref})["bounds"]
-                desktop.ipc().command(f"[con_id={win['id']}] focus")
-                b.call("click", {"x": bounds[0] + 10, "y": bounds[1] + bounds[3] // 2, "seat": "user"})
-                b.call("type_text", {"text": text, "seat": "user"})
-                b.wait(lambda: b.title(win["id"]).startswith("T:" + text), 5)
-                b.call("key", {"key": "a", "modifiers": ["ctrl"], "seat": "user"})
-                b.call("key", {"key": "BackSpace", "seat": "user"})
-                b.wait(lambda: b.title(win["id"]).split(" — ")[0] == "T:", 5)
+            with self.subTest(name):
+                require(self, name)
+                with Box() as b:
+                    win = b.launch(name)
+                    ref = b.ref(win["id"], "Field")
+                    bounds = b.call("read", {"ref": ref})["bounds"]
+                    desktop.ipc().command(f"[con_id={win['id']}] focus")
+                    b.call("click", {"x": bounds[0] + 10, "y": bounds[1] + bounds[3] // 2, "seat": "user"})
+                    b.call("type_text", {"text": text, "seat": "user"})
+                    b.wait(lambda: b.title(win["id"]).startswith("T:" + text), 5)
+                    b.call("key", {"key": "a", "modifiers": ["ctrl"], "seat": "user"})
+                    b.call("key", {"key": "BackSpace", "seat": "user"})
+                    b.wait(lambda: b.title(win["id"]).split(" — ")[0] == "T:", 5)
 
 
 @needs_sway
@@ -128,7 +128,9 @@ class SeatTests(unittest.TestCase):
         with Box() as b:
             a = b.oracle("A")
             b.user_pointer().click(*b.center_of(a, "A", "entry"))
-            apps = [b.launch(n) for n in ("gtk3", "gtk4", "qt6") if available(n)]
+            for n in ("gtk3", "gtk4", "qt6"):
+                require(self, n)
+            apps = [b.launch(n) for n in ("gtk3", "gtk4", "qt6")]
             user_outputs = {o["name"]: (o["rect"]["x"], o["rect"]["y"]) for o in desktop.get_outputs()
                             if o["name"] != b.sess.agent().output}
             seat0_devices = len(next(s for s in desktop.get_seats() if s["name"] == "seat0")["devices"])

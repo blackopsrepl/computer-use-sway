@@ -28,9 +28,9 @@ NEEDS = {"gtk3": "/usr/bin/python3", "gtk4": "/usr/bin/python3", "qt6": "qml6", 
 class LaunchPlacementTests(unittest.TestCase):
     def test_every_toolkit_lands_on_the_agent_workspace(self) -> None:
         for name, binary in NEEDS.items():
-            if not shutil.which(binary) and not os.access(binary, os.X_OK):
-                continue
             with self.subTest(name):
+                if not shutil.which(binary) and not os.access(binary, os.X_OK):
+                    self.skipTest(f"{name} is not installed")
                 sess = session.Session()
                 sess.start("sandbox")
                 try:

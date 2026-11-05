@@ -8,7 +8,7 @@ import unittest
 
 from computer_use_sway import core, desktop
 
-from harness import Box, available, needs_sway
+from harness import Box, needs_sway, require
 
 SINGLE_SEAT = {"chromium", "electron"}
 FOREGROUND = {"foreground_pointer": True, "idle_ms": 200, "idle_max_wait_ms": 5000}
@@ -36,15 +36,15 @@ def delivery(name: str) -> str:
 class GeometryMatrixTests(unittest.TestCase):
     def test_t3_1_click_hit_from_a11y_bounds(self) -> None:
         for name, scale, floating in MATRIX:
-            if not available(name):
-                continue
-            with self.subTest(f"{name} s{scale}{' floating' if floating else ''}"), Box(scale, FOREGROUND) as b:
-                win = b.launch(name)
-                place(b, win, scale, floating)
-                ref = b.ref(win["id"], "Hit")
-                out = b.call("act", {"target": {"ref": ref}, "action": "click", "delivery": delivery(name)})
-                self.assertIn(out["effect"], ("confirmed", "changed"), out)
-                b.wait(lambda: "T:hit" in b.title(win["id"]), 5)
+            with self.subTest(f"{name} s{scale}{' floating' if floating else ''}"):
+                require(self, name)
+                with Box(scale, FOREGROUND) as b:
+                    win = b.launch(name)
+                    place(b, win, scale, floating)
+                    ref = b.ref(win["id"], "Hit")
+                    out = b.call("act", {"target": {"ref": ref}, "action": "click", "delivery": delivery(name)})
+                    self.assertIn(out["effect"], ("confirmed", "changed"), out)
+                    b.wait(lambda: "T:hit" in b.title(win["id"]), 5)
 
 
 @needs_sway
@@ -52,16 +52,16 @@ class OcrTests(unittest.TestCase):
     def test_t3_2_ocr_ensemble_grounds_clicks(self) -> None:
         """Clicks grounded on OCR boxes alone (the a11y twin is ignored)."""
         for name, scale in OCR:
-            if not available(name):
-                continue
-            with self.subTest(f"{name} s{scale}"), Box(scale, FOREGROUND) as b:
-                win = b.launch(name)
-                place(b, win, scale, False)
-                ref = b.ref(win["id"], "Hit", ocr="always")
-                self.assertEqual(b.call("read", {"ref": ref})["source"], "ocr")
-                out = b.call("act", {"target": {"ref": ref}, "action": "click", "delivery": delivery(name)})
-                self.assertIn(out["effect"], ("confirmed", "changed"), out)
-                b.wait(lambda: "T:hit" in b.title(win["id"]), 5)
+            with self.subTest(f"{name} s{scale}"):
+                require(self, name)
+                with Box(scale, FOREGROUND) as b:
+                    win = b.launch(name)
+                    place(b, win, scale, False)
+                    ref = b.ref(win["id"], "Hit", ocr="always")
+                    self.assertEqual(b.call("read", {"ref": ref})["source"], "ocr")
+                    out = b.call("act", {"target": {"ref": ref}, "action": "click", "delivery": delivery(name)})
+                    self.assertIn(out["effect"], ("confirmed", "changed"), out)
+                    b.wait(lambda: "T:hit" in b.title(win["id"]), 5)
 
 
 @needs_sway
