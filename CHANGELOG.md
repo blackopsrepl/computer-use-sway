@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.0.1](https://github.com/blackopsrepl/computer-use-sway/compare/v1.0.0...v1.0.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **agent:** never draw the agent's cursor on the user's screen cc542ea
+
 ## [1.0.0](https://github.com/blackopsrepl/computer-use-sway/compare/v0.3.2...v1.0.0) (2026-11-05)
 
 

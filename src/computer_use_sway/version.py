@@ -8,4 +8,4 @@ server name and version without a circular import.
 from __future__ import annotations
 
 SERVER_NAME = "computer-use-sway"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.0.1"
