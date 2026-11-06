@@ -1,0 +1,38 @@
+# Release configuration: version surfaces, changelog rendering, tag shape.
+# Ports the retired .versionrc.js (commit-and-tag-version) contract one-to-one:
+# same version files, same visible/hidden commit types, same tag prefix and
+# URL formats. One deliberate change: a visible `refactor` section. The old
+# config hid it, which hid releases that were built from reshapes; removals
+# and restructurings are user-visible and must render.
+tagPrefix = "v"
+releaseCommitMessageFormat = "chore(release): {{currentTag}}"
+commitUrlFormat = "https://github.com/blackopsrepl/computer-use-sway/commit/{{hash}}"
+compareUrlFormat = "https://github.com/blackopsrepl/computer-use-sway/compare/{{previousTag}}...{{currentTag}}"
+issueUrlFormat = "https://github.com/blackopsrepl/computer-use-sway/issues/{{id}}"
+
+packageFiles = [
+  { filename = "pyproject.toml" },
+]
+
+types = [
+  { type = "feat", section = "Features" },
+  { type = "fix", section = "Bug Fixes" },
+  { type = "perf", section = "Performance Improvements" },
+  { type = "revert", section = "Reverts" },
+  { type = "build", section = "Build System" },
+  { type = "docs", section = "Documentation" },
+  { type = "refactor", section = "Code Refactoring" },
+  { type = "style", effect = "hidden" },
+  { type = "chore", effect = "hidden" },
+  { type = "test", effect = "hidden" },
+  { type = "ci", effect = "hidden" },
+]
+
+[[bumpFiles]]
+filename = "pyproject.toml"
+
+[[bumpFiles]]
+filename = "src/computer_use_sway/version.py"
+type = "regex"
+pattern = '^SERVER_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)"'
+versionGroup = 1

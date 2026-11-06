@@ -63,9 +63,9 @@ Layers in `src/computer_use_sway/` (dependencies point down; details in
   enforced by `scripts/check_file_length.py` through `make check`. Move code into
   a new focused module instead of growing an existing one; `CHANGELOG.md` and
   binary assets are exempt.
-- Do not hand-edit `CHANGELOG.md` or version numbers. `.versionrc.js` owns
-  `pyproject.toml` and `SERVER_VERSION`, and releases run through
-  `commit-and-tag-version`.
+- Do not hand-edit `CHANGELOG.md` or version numbers. `csemver.toml` owns
+  `pyproject.toml`, `src/computer_use_sway/version.py` and `CHANGELOG.md`,
+  and releases run through `csemver` (tag prefix `v`).
 - When a task is simple, do the simple thing. Do not expand scope into unrelated
   critical paths.
 
