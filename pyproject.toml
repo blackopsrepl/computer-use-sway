@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "computer-use-sway"
-version = "1.0.3"
+version = "2.0.0"
 description = "MCP server for computer use on Sway: explicit direct user-session control, accessibility-first grounding, verified actions"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"

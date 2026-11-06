@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.0.0](https://github.com/blackopsrepl/computer-use-sway/compare/v1.0.3...v2.0.0) (2026-11-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* session mode 'seat', delivery 'agent'/'foreground', observe scope 'agent', focus_window move_to_agent, the seat option accepting 'agent' and --install-sway-config/--uninstall-sway-config are removed. Idle-gated foreground delivery no longer exists; input on the user seat is immediate.
+
+### Build System
+
+* **release:** move versioning to csemver ([cf430a5](https://github.com/blackopsrepl/computer-use-sway/commit/cf430a57866fde7730c997898fcfcb3f3d465cc3))
+
+
+### Code Refactoring
+
+* retire the dual-seat architecture; direct user-session control only ([e813fad](https://github.com/blackopsrepl/computer-use-sway/commit/e813fad0c1e3c359d01484142a7e83a289de31ea))
+
+
 ## [1.0.3](https://github.com/blackopsrepl/computer-use-sway/compare/v1.0.2...v1.0.3) (2026-11-05)
 
 
