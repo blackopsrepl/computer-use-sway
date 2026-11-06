@@ -16,7 +16,7 @@ def tool_session(arguments: dict[str, Any]) -> core.Result:
     if action == "status":
         return core.text_result(sess.status(), {"action": action, "mode": sess.mode})
     if action == "start":
-        mode = arguments.get("mode", "seat")
+        mode = arguments.get("mode", "user")
         result = sess.start(mode, arguments.get("options"))
         return core.text_result(result, {"action": action, "mode": mode})
     if action == "stop":
@@ -91,8 +91,17 @@ def tool_wait_for(arguments: dict[str, Any]) -> core.Result:
 def tool_run(arguments: dict[str, Any]) -> core.Result:
     from .timeline import append_event
     from .tools import TOOLS
+    from .server import call_tool
 
-    return plans.run(TOOLS, arguments.get("steps"), arguments.get("stop_on", "failure"),
+    def checked(name: str):
+        def invoke(args: dict[str, Any]) -> core.Result:
+            content, meta = call_tool(name, args)
+            return core.Result(content, meta)
+        return invoke
+
+    tools = {name: checked(name) for name in TOOLS}
+
+    return plans.run(tools, arguments.get("steps"), arguments.get("stop_on", "failure"),
                      arguments.get("timeout_ms", 120000), arguments.get("observe_after"), publish=append_event)
 
 

@@ -17,9 +17,7 @@ def tool_screen_info(_: dict[str, Any]) -> core.Result:
     sess = session.current()
     sess.ensure_started()
     outputs = desktop.get_outputs()
-    agent_output = sess._agent.output if sess._agent is not None else None
-    user_rects = [o["rect"] for o in outputs if o.get("name") != agent_output]
-    rects = user_rects or [o["rect"] for o in outputs]
+    rects = [o["rect"] for o in outputs]
     min_x = min(r["x"] for r in rects)
     min_y = min(r["y"] for r in rects)
     max_x = max(r["x"] + r["width"] for r in rects)
@@ -28,13 +26,10 @@ def tool_screen_info(_: dict[str, Any]) -> core.Result:
         "server": {"name": SERVER_NAME, "version": SERVER_VERSION},
         "mode": sess.mode,
         "seat": sess.user_seat,
-        "default_input_seat": sess.default_seat(),
-        "agent": sess._agent.status() if sess._agent is not None else None,
         "bounds": {"x": min_x, "y": min_y, "width": max_x - min_x, "height": max_y - min_y},
         "outputs": [
             {
                 "name": output.get("name"),
-                "agent": output.get("name") == agent_output,
                 "active": output.get("active"),
                 "rect": output.get("rect"),
                 "scale": output.get("scale"),
@@ -73,48 +68,14 @@ def screenshot_region(arguments: dict[str, Any]) -> tuple[dict[str, int] | None,
     target = arguments.get("target_output")
     if target is not None:
         if not isinstance(target, str) or not target:
-            raise core.ToolError("target_output must be an output name or 'agent'")
-        if target == "agent":
-            agent = session.current().agent()
-            target = agent.output
+            raise core.ToolError("target_output must be an output name")
         names = {o.get("name") for o in desktop.get_outputs()}
         if target not in names:
             raise core.ToolError(f"no active output named {target!r}")
         return None, target
     if arguments.get("region") is None:
-        return user_area(), None
+        return None, None
     return desktop.validate_region(arguments.get("region")), None
-
-
-def agent_outputs(outputs: list[dict[str, Any]], own: str | None) -> set[str]:
-    """Every agent output in the layout: this server's, and any other
-    server's, recognisable by its workspace or its position (P3)."""
-    from .agent import AGENT_X, WORKSPACE
-
-    found = {own} if own else set()
-    for o in outputs:
-        if o.get("current_workspace") == WORKSPACE or (o.get("rect") or {}).get("x", 0) >= AGENT_X:
-            found.add(o.get("name"))
-    return found
-
-
-def user_area() -> dict[str, int] | None:
-    """The bounding box of the user's outputs. An agent output sits 100000 px
-    away; a whole-layout capture would span the gap (a 110-megapixel image)
-    and show the user nothing they can see. That holds for an agent output of
-    another server too. None when there is no agent output to leave out."""
-    sess = session.current()
-    outputs = desktop.get_outputs()
-    excluded = agent_outputs(outputs, sess._agent.output if sess._agent is not None else None)
-    if not excluded:
-        return None
-    rects = [o["rect"] for o in outputs if o.get("name") not in excluded]
-    if not rects:
-        return None
-    x0, y0 = min(r["x"] for r in rects), min(r["y"] for r in rects)
-    x1 = max(r["x"] + r["width"] for r in rects)
-    y1 = max(r["y"] + r["height"] for r in rects)
-    return {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}
 
 
 def tool_screenshot(arguments: dict[str, Any]) -> core.Result:
@@ -175,7 +136,7 @@ def tool_window_tree(arguments: dict[str, Any]) -> core.Result:
     sess = session.current()
     seats = {"user": sess.user_seat}
     return core.text_result({"windows": windows, "count": len(windows),
-                             "agent_focus": desktop.seat_focus("cus-agent"), "seats": seats},
+                             "seats": seats},
                             {"count": len(windows)})
 
 
@@ -210,7 +171,7 @@ def tool_observe(arguments: dict[str, Any]) -> core.Result:
 
     scope = arguments.get("scope")
     if scope is not None and scope not in scene.SCOPES:
-        raise core.ToolError("scope must be agent, focused, visible, or window")
+        raise core.ToolError("scope must be focused, visible, or window")
     window = arguments.get("window")
     if window is not None and not isinstance(window, dict):
         raise core.ToolError("window must be a selector object")

@@ -1,36 +1,26 @@
-# Codex Setup
+# Codex setup
 
-Install the package first:
-
-```bash
-python3 -m pip install .
-computer-use-sway --install-sway-config
-```
-
-The server gives the agent its own Sway seat and workspace beside you, grounds
-targets on the accessibility tree first, and returns an effect verdict for every
-action (see `WIREFRAME.md`). The second command declares that seat once.
-
-Register:
+Install `python3 -m pip install .`, then register explicitly:
 
 ```bash
 computer-use-sway --install-codex-mcp
-```
-
-The registration command resolves in this order:
-
-1. `COMPUTER_USE_SWAY_COMMAND`, parsed as shell words.
-2. `computer-use-sway` found on `PATH`.
-3. `python -m computer_use_sway` as a source-checkout fallback.
-
-Inspect:
-
-```bash
 codex mcp get computer-use-sway --json
-computer-use-sway --doctor
 ```
 
-Unregister:
+Registration is not consent to desktop use. Keep this server disabled by
+default or require human approval in the client. Agents must only invoke its
+desktop tools when the human explicitly requests desktop interaction/inspection.
+The server cannot authenticate human provenance of an MCP request.
+
+After authorization, call `session(action=start)` explicitly (default `user`).
+No desktop tool auto-starts it. All input directly controls the human's pointer,
+keyboard focus, workspace and clipboard; no second seat or isolation exists.
+No Sway configuration installation is required or supported.
+
+The launcher resolves `COMPUTER_USE_SWAY_COMMAND` (shell words), the invoked
+console script, an installed command on PATH, then the source module fallback.
+Inspect with `computer-use-sway --doctor` or `--self-test`; these diagnostics
+read the session and must also only be run for an authorized desktop task.
 
 ```bash
 computer-use-sway --uninstall-codex-mcp

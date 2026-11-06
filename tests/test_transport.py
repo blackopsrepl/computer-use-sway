@@ -70,7 +70,7 @@ class SlotTests(unittest.TestCase):
 
         kb = vinput.VirtualKeyboard.__new__(vinput.VirtualKeyboard)
         kb.slots = [None] * len(keymap.SLOTS)
-        kb.pinned = set(keymap.AGENT_KEYSYMS)
+        kb.pinned = set()
         kb._used = {}
         kb.uploads = 0
 
@@ -78,17 +78,15 @@ class SlotTests(unittest.TestCase):
             kb.uploads += 1
 
         kb._upload = upload
-        kb._assign(list(keymap.AGENT_KEYSYMS), settle=False)
         patcher = unittest.mock.patch.object(vinput, "KEYMAP_SETTLE_S", 0)
         patcher.start()
         self.addCleanup(patcher.stop)
         return kb
 
-    def test_lru_eviction_keeps_agent_keys(self) -> None:
+    def test_lru_eviction_keeps_recent_text(self) -> None:
         kb = self.keyboard()
         for i in range(30):
             kb.code_for("U%04X" % (0x100 + i))
-        self.assertTrue(set(keymap.AGENT_KEYSYMS) <= set(kb.slots))
         self.assertIn("U011D", kb.slots)  # most recent survives
         self.assertNotIn("U0100", kb.slots)
 

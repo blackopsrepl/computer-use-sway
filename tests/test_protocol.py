@@ -96,7 +96,7 @@ class ProtocolTests(unittest.TestCase):
         def boom(_: dict) -> list:
             raise core.ToolError("stale_ref s1:1: element changed", code="stale_ref")
 
-        with patch.dict(server.TOOLS, {"read": boom}), patch.object(server, "append_event") as publish:
+        with patch.object(server.session.Session, "ensure_started"), patch.dict(server.TOOLS, {"read": boom}), patch.object(server, "append_event") as publish:
             response = server.handle_message({"jsonrpc": "2.0", "id": 7, "method": "tools/call",
                                               "params": {"name": "read", "arguments": {"ref": "s1:1"}}})
         self.assertTrue(response["result"]["isError"])
@@ -142,33 +142,3 @@ class ProtocolTests(unittest.TestCase):
                 os.environ.pop(core.COMMAND_ENV, None)
                 with patch.object(core.sys, "argv", [str(script)]):
                     self.assertEqual(cli.command_argv(), [str(script)])
-
-
-class ParkingTests(unittest.TestCase):
-    def test_every_tool_call_parks_the_agent_pointer_even_when_it_fails(self) -> None:
-        from types import SimpleNamespace
-
-        from computer_use_sway import session
-
-        parked: list[int] = []
-        fake = SimpleNamespace(busy=0)
-        fake.park_pointer = lambda: parked.append(fake.busy) or True
-
-        def boom(_arguments: dict) -> list:
-            raise core.ToolError("no", code="x")
-
-        sess = session.Session()
-        sess._agent = fake
-        session.reset_for_tests(sess)
-        try:
-            with patch.dict(server.TOOLS, {"ok": lambda _a: [], "boom": boom}):
-                server.call_tool("ok", {})
-                with self.assertRaises(core.ToolError):
-                    server.call_tool("boom", {})
-        finally:
-            session.reset_for_tests(None)
-        self.assertEqual(parked, [0, 0])  # after each call, with no call running
-
-
-if __name__ == "__main__":
-    unittest.main()

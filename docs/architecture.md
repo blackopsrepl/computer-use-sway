@@ -1,75 +1,64 @@
 # Architecture
 
-`computer-use-sway` is a single-process MCP stdio server, standard library only.
-It talks to Sway over the IPC socket, to Wayland over its own wire client, and
-to AT-SPI over its own D-Bus client; the only external programs it runs are
-`grim`, `tesseract` and `wl-clipboard`. The measured facts behind every design
-choice are in `docs/plan-1.0/FINDINGS.md`; the full design is
-`docs/plan-1.0/ARCHITECTURE.md`.
+The current design is explicit direct user-session control. The original
+`plan-1.0/` is historical: its dual-seat architecture has been removed.
 
 ## Layers
 
-| layer | modules | role |
+| Layer | Modules | Responsibility |
 |---|---|---|
-| transports | `swayipc`, `wire`, `keymap`, `vinput`, `dbus` | Sway IPC with an event subscription; a Wayland client for virtual pointer/keyboard and the idle notifier; a D-Bus client for AT-SPI |
-| desktop | `core`, `desktop`, `geometry`, `capture` | errors, environment recovery, the Sway tree, coordinates, grim captures and change detection |
-| agent | `install`, `agent`, `placement`, `sentinel`, `session`, `sandbox`, `reaper` | the config-declared agent seat, its output and workspace, window placement, the user's focus/idle sentinel, modes, the test sandbox |
-| perception | `atspi`, `toolkits`, `ocr`, `query`, `refs`, `scene` | the accessibility tree, measured toolkit profiles, the OCR ensemble, queries, refs and their validation, the rendered scene |
-| action | `actions`, `actions_delivery`, `verify`, `launch`, `waits`, `plans` | the delivery ladder, verdicts, launching, waits and multi-step runs |
-| surface | `tools*`, `specs*`, `server`, `cli`, `timeline`, `version` | MCP tools and schemas, the protocol loop, the CLI, the timeline stream |
+| Transport | swayipc, wire, keymap, vinput, dbus | stdlib IPC, Wayland devices on the existing user seat, accessibility bus |
+| Desktop | core, desktop, geometry, capture | errors, environment recovery, actual layout/tree, captures |
+| Lifecycle | session, idle, install, sandbox | explicit start/stop; idle observation only; runtime path; private test compositor |
+| Perception | atspi, toolkits, ocr, query, refs, scene | structure, toolkit facts, OCR, references |
+| Actions | actions, actions_delivery, verify, launch, waits, plans | semantic/direct user input, effect verdicts, direct subprocess launch, waits, batches |
+| Surface | tools*, specs*, validation, server, cli, timeline, version | strict argument checks, stdio tools, consent guidance, curated dispatch stream |
 
-Dependencies point down the table only. Every file stays under 500 lines
-(`scripts/check_file_length.py`).
+No agent seat, output ownership, output pinning, workspace placement, private
+binding keys, focus restoration, or alternate raw-input delivery route exists.
+`install.py` only resolves the private runtime directory; it installs no config.
+Python runtime dependencies remain empty.
 
-## Lifecycle
+## Lifecycle and permission boundary
 
-1. The first call that needs the desktop starts the session in `seat` mode
-   (or the mode `session start` asked for). The agent pins the user's outputs,
-   creates the headless output at x=100000, renames its workspace to
-   `cus-agent`, parks the agent seat's cursor on that output, and only then
-   creates virtual devices on the config-declared seat (FINDINGS I8).
-2. `observe` walks the AT-SPI tree of each window in scope, maps extents to
-   layout points, adds OCR words where the tree is thin, and numbers everything
-   as refs of one snapshot.
-3. `act` resolves the target (ref, query or point), validates the ref, climbs
-   the delivery ladder, and returns the verdict computed from readback,
-   AT-SPI events, Sway events and pixels.
-4. `launch` writes the launcher script, fires the agent's launcher binding,
-   registers the reported child pid for placement, and waits for the window.
-5. A sway `reload` marks the agent stale, and so does finding its devices off
-   the agent seat, which every input message checks first (a runtime `seat`
-   command moves them to seat0 without an event, FINDINGS S12). The next call
-   re-pins the layout, parks the cursor, recreates the devices and re-adds
-   placement criteria.
-6. On exit the devices are destroyed first, then the agent output is
-   unplugged, so the agent's cursor never lands on a user output, and
-   nothing of the agent stays on the desktop. A sandbox removes only its own
-   root.
+1. Starting the MCP server registers tools, but never opens a desktop session.
+   Client policy must require the human's explicit request before invoking any
+   desktop tool. The server cannot independently prove that human provenance.
+2. `session(action=start)` defaults to `user`. Only `user` and private-test
+   `sandbox` are accepted. Other desktop calls refuse with `session_required`.
+   Status and stop do not connect to the desktop. A failed start cleans up.
+3. Start discovers the existing user seat and subscribes to Sway events. Devices
+   are created lazily on that same seat. No seats/outputs/workspaces are created
+   in user mode, and no desktop layout/assignment configuration is installed.
+4. `observe` defaults to focused (or selected window); visible is also supported.
+   `act` resolves targets and uses semantic accessibility or direct user devices.
+   GTK3 blocking modal handlers prefer direct pointer delivery; popup items use
+   semantic actions. Input can change the human's pointer, focus and workspace;
+   no idle policy or focus restoration claims apply.
+5. `launch` starts an application inheriting this session's environment with
+   stale activation tokens stripped. There is no assignment or relocation of
+   its windows; normal Sway/application placement applies.
+6. Stop destroys virtual devices, closes accessibility/Wayland/subscription
+   connections, and leaves human apps/windows/layout alone. Sandbox stop kills
+   its own process group and removes only its own explicit runtime root.
 
-## Threads
+The MCP loop owns the Wayland/a11y clients. One subscription reader feeds the
+Sway event log. `idle.py` observes user inactivity for `wait_for` only, never as
+permission or a delivery gate.
 
-The main thread runs the MCP loop and owns the Wayland connection and the
-AT-SPI client. One reader thread follows the Sway event subscription and feeds
-the event log; its listeners (placement) issue IPC commands only. Nothing else
-runs concurrently.
+## Protocol and timeline
 
-## Environment Recovery
+Argument validation follows published schemas before tool dispatch. `run` steps
+use the same checked entry point and publish their results. Every dispatched
+`tools/call`, success or error, retains the timeline hook. Curation reduces typed
+text to characters and clipboard content to bytes; recording remains in seshat.
+Publishing errors never break a desktop call. Expected failures return tool
+errors; unexpected failures are logged on stderr with a generic client message.
 
-MCP hosts often launch stdio servers with a stripped environment. Before talking
-to Sway the server reconstructs `XDG_RUNTIME_DIR` (`/run/user/<uid>`),
-`SWAYSOCK` and `WAYLAND_DISPLAY` (the newest sockets there) and the session bus
-address.
+## Verification
 
-## Recording, Narration, And The Stream
-
-Screen recording, the take timeline, speech synthesis, captions and muxing live
-in a separate MCP server, **`seshat`** (<https://github.com/blackopsrepl/seshat>).
-This server publishes every call it dispatches to that server's timeline stream
-(`$XDG_RUNTIME_DIR/seshat/streams/computer-use-sway.jsonl`) with curated
-payloads; the verdict of an `act` travels inside `payload`.
-
-## Tool Error Model
-
-Expected desktop and validation failures are MCP tool results with
-`isError: true`, a message and a code. Unexpected Python exceptions are logged
-to stderr and returned as a generic internal tool error.
+Unit checks, the real stdio server, toolkit integration and benchmark operate
+only in private sandbox compositors and buses. Regression tests check explicit
+start, rejected legacy routes, actual direct pointer/keyboard input, and stable
+seat/output/workspace identities. Historical benchmarks are not evidence of
+current behavior. Every source file must remain below 500 lines.

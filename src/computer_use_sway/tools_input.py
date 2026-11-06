@@ -1,10 +1,4 @@
-"""Low-level input tools: pointer, keyboard, focus, clipboard writes.
-
-Every input goes through virtual devices bound to a seat. `seat: "agent"`
-(the default in seat/sandbox mode) uses the agent's own pointer and keyboard;
-`seat: "user"` uses seat0, the user's. Agent-seat input snapshots seat0's
-focus before and restores it after, and reports `disturbed_user`.
-"""
+"""Direct user-session pointer, keyboard, focus and clipboard writes."""
 
 from __future__ import annotations
 
@@ -12,9 +6,9 @@ import time
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-from . import core, desktop, install, keymap, session, verify
+from . import core, desktop, keymap, session, verify
 
-INPUT_SEATS = ("agent", "user")
+INPUT_SEATS = ("user",)
 
 
 def _int(arguments: dict[str, Any], key: str, default: int, low: int, high: int) -> int:
@@ -33,9 +27,10 @@ def _int(arguments: dict[str, Any], key: str, default: int, low: int, high: int)
 def resolve_seat(arguments: dict[str, Any]) -> str:
     seat = arguments.get("seat")
     if seat is None:
-        return session.current().default_seat()
+        session.current().ensure_started()
+        return "user"
     if seat not in INPUT_SEATS:
-        raise core.ToolError("seat must be agent or user")
+        raise core.ToolError("seat must be user")
     return seat
 
 
@@ -45,7 +40,7 @@ class SeatUse:
     def __init__(self, seat: str, devices: Any) -> None:
         self.seat = seat
         self.devices = devices
-        self.disturbed_user = False
+        self.disturbed_user = True
         self.baseline: verify.Baseline | None = None
         self.verdict: dict[str, Any] | None = None
 
@@ -60,7 +55,7 @@ class SeatUse:
 
 
 def keyboard_target(seat: str) -> int | None:
-    return desktop.seat_focus(install.SEAT if seat == "agent" else (session.current().user_seat or "seat0"))
+    return desktop.seat_focus(session.current().user_seat or "seat0")
 
 
 def pointer_target(x: int, y: int) -> int | None:
@@ -79,17 +74,7 @@ def wants_verify(arguments: dict[str, Any]) -> bool:
 def using_seat(arguments: dict[str, Any]) -> Iterator[SeatUse]:
     seat = resolve_seat(arguments)
     sess = session.current()
-    if seat == "user":
-        yield SeatUse(seat, sess.user_devices())
-        return
-    agent = sess.agent()
-    sentinel = sess.sentinel()
-    snap = sentinel.snapshot()
-    use = SeatUse(seat, agent.devices)
-    try:
-        yield use
-    finally:
-        use.disturbed_user = sentinel.restore(snap)
+    yield SeatUse(seat, sess.user_devices())
 
 
 def seat_payload(use: SeatUse) -> dict[str, Any]:
@@ -119,28 +104,12 @@ def tool_focus_window(arguments: dict[str, Any]) -> core.Result:
     sess = session.current()
     selected = desktop.find_window(arguments)
     con_id = int(selected["id"])
-    if arguments.get("move_to_agent"):
-        sess.agent()
-        desktop.ipc().command(f"[con_id={con_id}] move container to workspace {desktop.AGENT_WORKSPACE}")
-    if seat == "user":
-        before = desktop.get_focused_window()
-        desktop.ipc().command(f"[con_id={con_id}] focus")
-        time.sleep(0.05)
-        after = desktop.get_focused_window()
-        return core.text_result({"before": before, "selected": selected, "after": after, "seat": seat},
-                                {"seat": seat, "con_id": con_id})
-    agent = sess.agent()
-    sentinel = sess.sentinel()
-    snap = sentinel.snapshot()
-    try:
-        agent.focus(con_id)
-    finally:
-        disturbed = sentinel.restore(snap)
-    return core.text_result(
-        {"selected": selected, "agent_focus": desktop.seat_focus(install.SEAT), "seat": seat,
-         "disturbed_user": disturbed},
-        {"seat": seat, "con_id": con_id, "disturbed_user": disturbed},
-    )
+    before = desktop.get_focused_window()
+    desktop.ipc().command(f"[con_id={con_id}] focus")
+    time.sleep(0.05)
+    after = desktop.get_focused_window()
+    return core.text_result({"before": before, "selected": selected, "after": after, "seat": seat},
+                            {"seat": seat, "con_id": con_id})
 
 
 def tool_move_pointer(arguments: dict[str, Any]) -> core.Result:
@@ -280,9 +249,6 @@ def tool_key(arguments: dict[str, Any]) -> core.Result:
 
 def clipboard_seat_args(arguments: dict[str, Any]) -> list[str]:
     seat = resolve_seat(arguments)
-    if seat == "agent":
-        session.current().agent()
-        return ["--seat", install.SEAT]
     user = session.current().user_seat
     return ["--seat", user] if user else []
 

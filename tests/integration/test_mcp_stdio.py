@@ -47,6 +47,7 @@ class McpStdioTests(unittest.TestCase):
             try:
                 self.assertEqual(rpc("initialize")["serverInfo"]["name"], "computer-use-sway")
                 self.assertEqual(len(rpc("tools/list")["tools"]), 19)
+                tool("session", {"action": "start"})
                 argv, app_env = targets.argv("gtk3", assets)
                 json.loads(tool("launch", {"argv": argv, "env": app_env}))
                 listing = tool("observe", {"query": {"role": "entry", "name": "Field"}})

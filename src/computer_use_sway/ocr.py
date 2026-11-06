@@ -104,7 +104,7 @@ def parse_tsv(out: str, variant: str) -> list[Word]:
     return words
 
 
-def recognize(ppm: bytes, psm: str = "11") -> list[Word]:
+def recognize(ppm: bytes, psm: str = "12") -> list[Word]:
     if not available():
         raise core.ToolError(MISSING, code="ocr_missing")
     tmp = tempfile.mkdtemp(prefix="cus-ocr-", dir=_tmp_root())

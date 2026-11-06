@@ -125,7 +125,7 @@ class DispatchPublishTests(unittest.TestCase):
         def fake(_: dict) -> list[dict[str, str]]:
             return [{"type": "text", "text": "{}"}]
 
-        with patch.dict(server.TOOLS, {"screen_info": fake}):
+        with patch.object(server.session.Session, "ensure_started"), patch.dict(server.TOOLS, {"screen_info": fake}):
             response = self.call("screen_info")
         self.assertIs(response["result"]["isError"], False)
         record = self.published()[0]
@@ -137,7 +137,7 @@ class DispatchPublishTests(unittest.TestCase):
         def boom(_: dict) -> list[dict[str, str]]:
             raise server.ToolError("no such window")
 
-        with patch.dict(server.TOOLS, {"focus_window": boom}):
+        with patch.object(server.session.Session, "ensure_started"), patch.dict(server.TOOLS, {"focus_window": boom}):
             response = self.call("focus_window", {"title": "x"})
         self.assertIs(response["result"]["isError"], True)
         self.assertEqual(self.published()[0]["ok"], False)

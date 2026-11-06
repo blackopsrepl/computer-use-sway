@@ -54,23 +54,18 @@ def specs() -> list[dict[str, Any]]:
         {
             "name": "session",
             "description": (
-                "Status, start or stop the computer-use session. Modes: seat (default; the agent works on "
-                "its own seat and workspace beside the user), user (drive the user's seat0), sandbox "
-                "(a private nested sway)."
+                "Explicitly start or stop direct user-session control, or inspect status. Never start or "
+                "use desktop tools without a human explicit request. Default: user. Sandbox is private test isolation."
             ),
             "annotations": ACTING,
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "action": {"type": "string", "enum": ["status", "start", "stop"]},
-                    "mode": {"type": "string", "enum": ["seat", "user", "sandbox"], "default": "seat"},
+                    "mode": {"type": "string", "enum": ["user", "sandbox"], "default": "user"},
                     "options": {
                         "type": "object",
                         "properties": {
-                            "foreground": {"type": "string", "enum": ["idle", "always", "never"]},
-                            "idle_ms": {"type": "integer", "minimum": 0, "maximum": 60000},
-                            "idle_max_wait_ms": {"type": "integer", "minimum": 0, "maximum": 120000},
-                            "foreground_pointer": {"type": "boolean"},
                             "settle_ms": {"type": "integer", "minimum": 0, "maximum": 5000},
                             "ocr": {"type": "string", "enum": ["auto", "always", "never"]},
                         },
@@ -91,8 +86,8 @@ def specs() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "scope": {"type": "string", "enum": ["agent", "focused", "visible", "window"],
-                              "description": "agent (default in seat mode): windows on the agent workspace."},
+                    "scope": {"type": "string", "enum": ["focused", "visible", "window"],
+                              "description": "Focused (default), visible, or one selected window."},
                     "window": SELECTOR,
                     "query": QUERY,
                     "max_elements": {"type": "integer", "minimum": 1, "maximum": 500, "default": 150},
@@ -121,8 +116,7 @@ def specs() -> list[dict[str, Any]]:
             "name": "act",
             "description": (
                 "Do one thing to one element and report whether it worked. Tries a semantic accessibility "
-                "action first, then the agent's own seat, then (only if the user is idle and policy allows) a "
-                "brief foreground step with the user's focus restored. The result's effect is "
+                "action first, then direct user-session input. Pointer and focus are not restored. The effect is "
                 "confirmed/changed/no_change/unverifiable with evidence."
             ),
             "annotations": ACTING,
@@ -139,7 +133,7 @@ def specs() -> list[dict[str, Any]]:
                     "direction": {"type": "string", "enum": ["up", "down", "left", "right"]},
                     "clicks": {"type": "integer", "minimum": 1, "maximum": 50, "default": 3},
                     "to": TARGET,
-                    "delivery": {"type": "string", "enum": ["auto", "semantic", "agent", "foreground"],
+                    "delivery": {"type": "string", "enum": ["auto", "semantic", "user"],
                                  "default": "auto"},
                     "verify": {"type": "boolean", "default": True},
                 },
@@ -214,7 +208,7 @@ def specs() -> list[dict[str, Any]]:
         {
             "name": "launch",
             "description": (
-                "Start a program on the agent workspace (seat mode) without touching the user's focus. Adds "
+                "Start a program directly in the user session; it may take focus. Adds "
                 "the accessibility flag Chromium/Electron need. Returns the new window."
             ),
             "annotations": ACTING,

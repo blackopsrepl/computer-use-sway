@@ -42,7 +42,7 @@ TIMELINE_PAYLOAD_KEYS: dict[str, tuple[str, ...]] = {
     "launch": ("a11y",),
     "screenshot": ("output", "include_cursor", "region", "target_output"),
     "window_tree": ("include_scratchpad", "max_depth"),
-    "focus_window": ("con_id", "app_id", "class", "title", "match", "seat", "move_to_agent"),
+    "focus_window": ("con_id", "app_id", "class", "title", "match", "seat"),
     "move_pointer": ("x", "y", "mode", "seat"),
     "click": ("x", "y", "button", "count", "interval_ms", "seat"),
     "drag": ("from", "to", "button", "steps", "duration_ms", "seat"),

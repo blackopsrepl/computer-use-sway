@@ -18,13 +18,12 @@ def single_output(name: str = "DP-1", width: int = 1920, height: int = 1080) -> 
 class FakeSession:
     mode = "seat"
     user_seat = "seat0"
-    _agent = None
 
     def ensure_started(self) -> None:
         pass
 
     def default_seat(self) -> str:
-        return "agent"
+        return "user"
 
 
 class ScreenInfoTests(unittest.TestCase):
@@ -39,7 +38,7 @@ class ScreenInfoTests(unittest.TestCase):
         self.assertEqual(payload["server"]["name"], "computer-use-sway")
         self.assertEqual(payload["bounds"], {"x": 0, "y": 0, "width": 1920, "height": 1080})
         self.assertEqual(payload["mode"], "seat")
-        self.assertEqual(payload["default_input_seat"], "agent")
+        self.assertNotIn("user", payload)
         self.assertIn("grim", payload["binaries"])
 
     def test_obsolete_and_narration_binaries_are_not_reported(self) -> None:
@@ -85,15 +84,6 @@ class ScreenshotTests(unittest.TestCase):
         with self.assertRaises(core.ToolError):
             self.shot({"save_path": "/tmp/shot.png", "output": "both"})
 
-    def test_every_agent_output_is_left_out_of_the_default_screenshot(self) -> None:
-        # Another server's agent output is as far away as our own [P3].
-        outputs = [{"name": "DP-1", "rect": {"x": 0, "y": 0}, "current_workspace": "1"},
-                   {"name": "HEADLESS-2", "rect": {"x": 100000, "y": 0}, "current_workspace": "cus-agent"},
-                   {"name": "HEADLESS-3", "rect": {"x": 100000, "y": 0}, "current_workspace": "7"},
-                   {"name": "HDMI-A-1", "rect": {"x": 1920, "y": 0}, "current_workspace": "2"}]
-        self.assertEqual(tools_observe.agent_outputs(outputs, None), {"HEADLESS-2", "HEADLESS-3"})
-        self.assertEqual(tools_observe.agent_outputs(outputs, "HEADLESS-9"), {"HEADLESS-2", "HEADLESS-3", "HEADLESS-9"})
-
     def test_region_window_and_output_are_exclusive(self) -> None:
         with self.assertRaises(core.ToolError):
             tools_observe.screenshot_region({"region": {"x": 0}, "target_output": "DP-1"})
@@ -124,7 +114,7 @@ class InputToolTests(unittest.TestCase):
     def use(self, devices: FakeDevices):
         class Ctx:
             def __enter__(self_inner):
-                use = tools_input.SeatUse("agent", devices)
+                use = tools_input.SeatUse("user", devices)
                 return use
 
             def __exit__(self_inner, *exc):
@@ -142,7 +132,7 @@ class InputToolTests(unittest.TestCase):
             )
         payload = json.loads(result.content[0]["text"])
         self.assertTrue(payload["dragged"])
-        self.assertEqual(payload["seat"], "agent")
+        self.assertEqual(payload["seat"], "user")
         (_kind, args, kwargs), = devices.pointer.calls
         self.assertEqual(args, ((1, 2), (30, 40)))
         self.assertEqual(kwargs["steps"], 5)
@@ -165,7 +155,7 @@ class InputToolTests(unittest.TestCase):
             with self.assertRaises(core.ToolError):
                 tools_input.tool_click({"x": 1, "y": 1, "count": 4})
 
-    def test_seat_must_be_agent_or_user(self) -> None:
+    def test_seat_must_be_user(self) -> None:
         with self.assertRaises(core.ToolError):
             tools_input.resolve_seat({"seat": "seat0"})
 

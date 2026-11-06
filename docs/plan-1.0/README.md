@@ -1,4 +1,8 @@
-# computer-use-sway 1.0 — implementation plan
+# Historical: computer-use-sway 1.0 implementation plan
+
+> Archived design and measurements. The dual-seat architecture described here
+> has been removed. This is not the current implementation contract or an
+> instruction to restore it. See ../architecture.md and ../../WIREFRAME.md.
 
 This directory is a complete, proven plan for rebuilding `computer-use-sway`
 into a Sway-native computer-use server. The agent has its own seat and

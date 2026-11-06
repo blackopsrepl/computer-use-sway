@@ -1,34 +1,17 @@
-"""`launch`: start an app on the agent workspace, beside the user.
-
-In seat/sandbox mode the app is exec'd by sway itself through the agent
-binding (`bindsym <LAUNCH_KEY> exec <launcher>`), fired from the agent
-keyboard while the agent seat sits on workspace `cus-agent`: sway then maps
-the new window there, for the agent seat, without touching seat0 (O5, O6,
-O9, O10). The launcher script is rewritten per launch and reset to a no-op
-placeholder afterwards so a stray key tap does nothing. The activation
-token sway passes to the exec is kept: it is what places Qt and Chromium
-windows (O11).
-"""
+"""Launch an application directly in the requested user session."""
 
 from __future__ import annotations
 
 import os
 import re
-import shlex
 import shutil
 import subprocess
-import sys
 import time
-from pathlib import Path
 from typing import Any
 
-from . import core, desktop, install, toolkits
+from . import core, desktop, toolkits
 
 ENV_KEY = re.compile(r"^[A-Z_][A-Z0-9_]*$")
-# Only for user mode, where the child inherits *our* environment and a stale
-# token there would be wrong. In seat mode the token sway's exec creates is
-# what places the window on the agent workspace: Qt and Chromium map on the
-# user's workspace and take seat0 focus without it (measured, FINDINGS O11).
 STRIP = ("XDG_ACTIVATION_TOKEN", "DESKTOP_STARTUP_ID")
 
 
@@ -60,54 +43,6 @@ def with_a11y_flags(argv: list[str], a11y: bool) -> tuple[list[str], toolkits.Pr
             if flag not in argv:
                 argv = [argv[0], flag, *argv[1:]]
     return argv, profile
-
-
-REAPER = Path(__file__).with_name("reaper.py")
-
-
-def pid_file_path() -> Path:
-    return install.launcher_path().with_name("child.pid")
-
-
-def script(argv: list[str], cwd: str | None, env: dict[str, str], pid_file: Path | None = None) -> str:
-    lines = ["#!/bin/sh"]
-    if cwd:
-        lines.append(f"cd {shlex.quote(cwd)} || exit 1")
-    for key, value in env.items():
-        lines.append(f"export {key}={shlex.quote(value)}")
-    if pid_file is not None:
-        lines.append(f"export COMPUTER_USE_SWAY_PIDFILE={shlex.quote(str(pid_file))}")
-    # The reaper keeps sway's launch pid alive as the subreaper of everything
-    # the app forks, so sway's pid-ancestry placement holds for apps whose
-    # launcher process exits (Electron).
-    lines.append(f"exec {shlex.join([sys.executable, str(REAPER), *argv])}")
-    return "\n".join(lines) + "\n"
-
-
-def write_launcher(text: str) -> None:
-    path = install.launcher_path()
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd = os.open(path, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o700)
-    try:
-        os.write(fd, text.encode("utf-8"))
-    finally:
-        os.close(fd)
-    os.chmod(path, 0o700)
-
-
-def _register_child(session: Any, pid_file: Path, limit_s: float = 3.0) -> None:
-    """Assign the app's process to the agent workspace as soon as the reaper
-    reports it, so windows after the first (which sway places through the
-    launch context, then consumes it) map there too."""
-    deadline = time.monotonic() + limit_s
-    while time.monotonic() < deadline:
-        try:
-            pid = int(pid_file.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            time.sleep(0.01)
-            continue
-        session.agent().placement.expect(pid)
-        return
 
 
 def _wait_new_window(session: Any, before: set[int], t0: float, timeout_s: float,
@@ -195,41 +130,19 @@ def launch(session: Any, argv: Any, cwd: Any = None, env: Any = None, timeout_ms
     before = {w["id"] for w in desktop.all_windows()}
     t0 = time.monotonic()
     meta = {"program": os.path.basename(argv[0])}
-    if session.mode == "user":
-        child_env = {k: v for k, v in os.environ.items() if k not in STRIP}
-        child_env.update(env)
-        subprocess.Popen(argv, cwd=cwd, env=child_env, start_new_session=True, stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        win = _wait_new_window(session, before, t0, timeout_ms / 1000.0, None)
-        if win is not None:
-            win = _settle(int(win["id"])) or win
-        disturbed = True
+    child_env = {k: v for k, v in os.environ.items() if k not in STRIP}
+    child_env.update(env)
+    child = subprocess.Popen(argv, cwd=cwd, env=child_env, start_new_session=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if session.sandbox() is not None:
+        session.sandbox().procs.append((f"launch-{child.pid}", child))
     else:
-        agent = session.agent()
-        sentinel = session.sentinel()
-        snap = sentinel.snapshot()
-        try:
-            pid_file = pid_file_path()
-            pid_file.unlink(missing_ok=True)
-            write_launcher(script(argv, cwd, env, pid_file))
-            agent.to_workspace()
-            agent.tap(install.LAUNCH_KEY)
-            _register_child(session, pid_file)
-            win = _wait_new_window(session, before, t0, timeout_ms / 1000.0, install.SEAT)
-            if win is not None and win.get("workspace") != install.SEAT:
-                # Placement failed (e.g. the app handed the window to an already
-                # running instance): move it off the user's screen.
-                moved_from = win.get("workspace")
-                desktop.ipc().command(f"[con_id={int(win['id'])}] move container to workspace {install.SEAT}")
-                win = desktop.window_by_id(int(win["id"])) or win
-                win["moved_from"] = moved_from
-            if win is not None:
-                agent.placement.adopt(win)
-                agent.focus(int(win["id"]))
-                win = _settle(int(win["id"])) or win
-        finally:
-            write_launcher(install.PLACEHOLDER)
-            disturbed = sentinel.restore(snap)
+        session.children = [p for p in session.children if p.poll() is None]
+        session.children.append(child)
+    win = _wait_new_window(session, before, t0, timeout_ms / 1000.0, None)
+    if win is not None:
+        win = _settle(int(win["id"])) or win
+    disturbed = True
     if win is None:
         appeared = [w["id"] for w in desktop.all_windows() if w["id"] not in before]
         raise core.ToolError(
@@ -246,7 +159,6 @@ def launch(session: Any, argv: Any, cwd: Any = None, env: Any = None, timeout_ms
         "launched": True,
         "window": win,
         "profile": profile_seen.name,
-        "seats": {True: "agent+user", False: "user only", None: "unknown"}[profile_seen.multi_seat],
         "a11y": ready,
         "disturbed_user": disturbed,
         "flags_added": [f for f in profile.launch_flags if a11y],

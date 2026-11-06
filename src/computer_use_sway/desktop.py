@@ -10,8 +10,6 @@ from typing import Any
 
 from . import core, swayipc
 
-AGENT_SEAT = "cus-agent"
-AGENT_WORKSPACE = "cus-agent"
 
 
 def ipc() -> swayipc.Ipc:
@@ -61,7 +59,7 @@ def detect_seat() -> str:
         if seat.get("name") == "seat0":
             return "seat0"
     for seat in seats:
-        if seat.get("name") != AGENT_SEAT and int(seat.get("capabilities", 0)) & 1:
+        if int(seat.get("capabilities", 0)) & 1:
             name = seat.get("name")
             if isinstance(name, str) and name:
                 return name

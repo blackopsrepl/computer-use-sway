@@ -1,6 +1,4 @@
-"""kitty, the supported terminal: exact text on the user's seat, and nothing
-from the agent seat, which kitty ignores (FINDINGS I5, I6). kitty runs `cat`
-into a file, so the file holds exactly what kitty received."""
+"""Exact direct user-seat text in kitty, read back from its cat output file."""
 
 from __future__ import annotations
 
@@ -23,8 +21,7 @@ def argv(name: str, command: str) -> list[str]:
     }[name]
 
 
-# Measured: kitty ignores input from a non-default seat.
-AGENT_SEAT = {"kitty": False}
+TERMINALS = ("kitty",)
 
 
 def received(path: Path) -> str:
@@ -42,10 +39,7 @@ class TerminalTests(unittest.TestCase):
             win = b.call("launch", {"argv": argv(name, f"stty raw -echo; cat > {out}"),
                                     "timeout_ms": 30000})["window"]
             time.sleep(1.0)
-            if seat == "agent":
-                session.current().agent().focus(int(win["id"]))
-            else:
-                desktop.ipc().command(f"[con_id={int(win['id'])}] focus")
+            desktop.ipc().command(f"[con_id={int(win['id'])}] focus")
             time.sleep(0.3)
             b.call("type_text", {"text": TEXT, "seat": seat})
             if expect:
@@ -55,12 +49,12 @@ class TerminalTests(unittest.TestCase):
             return received(out)
 
     def test_i6_each_terminal_receives_exact_text_on_its_seats(self) -> None:
-        for name, agent_ok in AGENT_SEAT.items():
-            for seat in ("user", "agent"):
+        for name in TERMINALS:
+            for seat in ("user",):
                 with self.subTest(terminal=name, seat=seat):
                     if shutil.which(name) is None:
                         self.skipTest(f"{name} is not installed")
-                    expect = "" if seat == "agent" and not agent_ok else TEXT
+                    expect = TEXT
                     self.assertEqual(self.check(name, seat, expect), expect)
 
 

@@ -148,7 +148,7 @@ def render_config(root: Path, width: int, height: int, scale: float) -> str:
         "xwayland disable\n"
         f"output HEADLESS-1 resolution {width}x{height} position 0 0 scale {scale:g}\n"
         "seat seat0 fallback true\n"
-        + install.render(install.launcher_path(root / "computer-use-sway"))
+
     )
 
 
@@ -187,8 +187,9 @@ class Sandbox:
             return ""
 
     def _spawn(self, name: str, argv: list[str], env: dict[str, str]) -> subprocess.Popen:
-        proc = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                stderr=self._log(name), start_new_session=True)
+        with self._log(name) as log:
+            proc = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                    stderr=log, start_new_session=True)
         self.procs.append((name, proc))
         return proc
 
@@ -232,9 +233,6 @@ class Sandbox:
             self._spawn("atspi-registry", [registry, "--use-gnome-session"], base)
             time.sleep(0.3)
             self.a11y = True
-        # Inside the sandbox XDG_RUNTIME_DIR is the root, so the product's
-        # runtime dir (and launcher) live at root/computer-use-sway.
-        install.write_placeholder(install.launcher_path(self.root / "computer-use-sway"))
         (self.root / "config").write_text(render_config(self.root, self.width, self.height, self.scale),
                                           encoding="utf-8")
         swaysock = self.root / "sway.sock"

@@ -19,17 +19,20 @@ Guidance for coding agents working in this repository.
   published event means a call was *dispatched* — never that the action had its
   intended visible effect.
 - Outside its own runtime directory (`$XDG_RUNTIME_DIR/computer-use-sway/`:
-  launcher, pid files, captures) the stream is the only file this server
-  writes, besides the opt-in `--install-sway-config` drop-in and a
-  caller-given `save_path`. Stream payloads are curated here before they are
+  private sandbox files and captures) the stream is the only file this server
+  writes, besides a caller-given `save_path`. Stream payloads are curated here before they are
   written: typed text becomes a character count, clipboard
   content becomes a byte count, and neither value ever reaches the file.
 - Publishing is a side channel: a missing runtime directory or any write error is
   swallowed, because narration must never be able to break an action.
-- The agent works on its own config-declared seat, output and workspace beside
-  the user. Input on the user's seat (the foreground rung) happens only while
-  the user is idle, and their focus is restored. Every `act` returns an effect
-  verdict; never report an action as done without one.
+- Direct user-session control only. No second seat/output/workspace, placement,
+  focus restoration, idle-gated delivery, private bindings or config installer.
+- Agents must never invoke desktop use without the human's explicit request.
+  MCP availability and a running session are not consent. Client approval policy
+  must enforce this too; the server cannot authenticate human provenance.
+- No implicit startup: desktop calls refuse `session_required` until explicit
+  `session start` (default `user`). `sandbox` remains private test isolation.
+- Every `act` returns an effect; publication alone is never visible success.
 - Tests never touch the user's live session: integration tests and the bench
   run in sandbox sways with a private runtime directory and buses.
 
@@ -41,8 +44,8 @@ Layers in `src/computer_use_sway/` (dependencies point down; details in
 - transports: `swayipc.py`, `wire.py`, `keymap.py`, `vinput.py`, `dbus.py`.
 - desktop: `core.py` (errors, subprocesses, environment recovery), `desktop.py`,
   `geometry.py`, `capture.py`.
-- agent: `install.py`, `agent.py`, `placement.py`, `sentinel.py`,
-  `session.py`, `sandbox.py`, `reaper.py`.
+- lifecycle: `install.py` (runtime path only), `idle.py` (observation only),
+  `session.py`, `sandbox.py`.
 - perception: `atspi.py`, `toolkits.py`, `ocr.py`, `query.py`, `refs.py`,
   `scene.py`.
 - action: `actions.py`, `actions_delivery.py`, `verify.py`, `launch.py`,
@@ -78,12 +81,12 @@ make release-gate # check, integration, bench and no sandbox leftovers
 ```
 
 `make check` gates every commit; `make release-gate` gates every release and
-any change to delivery, perception or the agent seat. A gate's verdict is its
+any change to delivery, perception or the direct user session. A gate's verdict is its
 exit status. Do not pipe a gate through `grep`, `head` or `tail`, or append
 commands after it, when you judge it: a pipeline reports its last command's
 status, and a failure then reads as a pass. Save the full log and read the
-status. A design
-claim belongs in `docs/plan-1.0/FINDINGS.md` with the test that measures it.
+status. New behavior belongs in current docs with its verification evidence.
+`docs/plan-1.0/` is historical; never restore its retired dual-seat design.
 
 ## Documentation Surfaces
 

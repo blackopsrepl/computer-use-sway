@@ -132,7 +132,7 @@ def wait_for(session: Any, condition: Any, timeout_ms: Any = 10000) -> core.Resu
         idle_ms = condition["user_idle_ms"]
         if isinstance(idle_ms, bool) or not isinstance(idle_ms, int) or not 0 <= idle_ms <= 60000:
             raise core.ToolError("user_idle_ms must be between 0 and 60000")
-        ok = session.sentinel().wait_user_idle(idle_ms, timeout_ms)
+        ok = session.idle().wait_user_idle(idle_ms, timeout_ms)
         detail = "user idle" if ok else "user active"
     waited = round((time.monotonic() - started) * 1000)
     return core.text_result({"satisfied": ok, "waited_ms": waited, "detail": detail},

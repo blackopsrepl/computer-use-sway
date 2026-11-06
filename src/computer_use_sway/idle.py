@@ -1,10 +1,4 @@
-"""The user's side: focus snapshots and idle detection on seat0.
-
-`ext_idle_notifier_v1` notifications are per seat, and input on the agent
-seat does not resume seat0's notification (FINDINGS S11). That lets the
-foreground step wait until the user is idle without our own agent-seat input
-counting as user activity.
-"""
+"""Idle notification observation on the existing user seat."""
 
 from __future__ import annotations
 
@@ -19,7 +13,7 @@ NOTIFICATION_DESTROY = 0
 EV_IDLED, EV_RESUMED = 0, 1
 
 
-class Sentinel:
+class Idle:
     def __init__(self, ipc: Any, conn: Any, user_seat: str = "seat0") -> None:
         self.ipc = ipc
         self.conn = conn
@@ -30,56 +24,6 @@ class Sentinel:
         self._threshold: int | None = None
         self.idle = False
         self.idle_since: float | None = None
-
-    # -- focus ---------------------------------------------------------------
-    def focus(self) -> int | None:
-        for seat in self.ipc.seats():
-            if seat.get("name") == self.user_seat:
-                focus = seat.get("focus")
-                return int(focus) if isinstance(focus, int) and focus else None
-        return None
-
-    def _node_kind(self, con_id: int) -> tuple[str | None, str | None]:
-        """(node type, workspace name) of a node in the tree."""
-        def walk(node: dict[str, Any], workspace: str | None) -> tuple[str | None, str | None] | None:
-            if node.get("type") == "workspace":
-                workspace = node.get("name")
-            if node.get("id") == con_id:
-                return node.get("type"), workspace
-            for key in ("nodes", "floating_nodes"):
-                for child in node.get(key) or []:
-                    hit = walk(child, workspace)
-                    if hit is not None:
-                        return hit
-            return None
-
-        return walk(self.ipc.tree(), None) or (None, None)
-
-    def snapshot(self) -> dict[str, Any]:
-        focus = self.focus()
-        kind, workspace = self._node_kind(focus) if focus else (None, None)
-        return {"focus": focus, "kind": kind, "workspace": workspace, "t": time.monotonic()}
-
-    def restore(self, snap: dict[str, Any]) -> bool:
-        """Put seat0 focus back if it moved. True when a restore was needed.
-
-        An empty workspace is focused as a workspace node, which `[con_id=]`
-        criteria never match, so it is restored by name.
-        """
-        want = snap.get("focus")
-        if not want or self.focus() == want:
-            return False
-        try:
-            if snap.get("kind") == "workspace" and snap.get("workspace"):
-                name = str(snap["workspace"]).replace("\\", "\\\\").replace('"', '\\"')
-                self.ipc.command(f'workspace "{name}"')
-            else:
-                self.ipc.command(f"[con_id={int(want)}] focus")
-        except core.ToolError as exc:
-            core.eprint(f"could not restore the user's focus: {exc}")
-        if self.focus() != want:
-            core.eprint(f"user focus restore incomplete: wanted {want}, have {self.focus()}")
-        return True
 
     # -- idle ----------------------------------------------------------------
     def _ensure_notifier(self) -> bool:

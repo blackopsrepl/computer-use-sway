@@ -3,7 +3,7 @@
 The server used to shell out to `swaymsg` for every query. Talking to the
 socket directly removes a binary dependency and, more importantly, gives us an
 event subscription: reloads, new windows and focus changes arrive as events
-the instant they happen, which is what the agent seat's recovery and the
+the instant they happen, which is what the session observers and the
 action verdicts are built on.
 
 Wire format (i3 IPC): b"i3-ipc" + uint32 length + uint32 type, native endian,

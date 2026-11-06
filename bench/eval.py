@@ -33,6 +33,8 @@ RESULTS = ROOT / "results"
 SRC = str(ROOT.parent / "src")
 METER = str(ROOT / "mcp_meter.py")
 PROMPT = ("You are operating a Linux desktop (Sway) through the `desk` MCP tools only. "
+          "The human explicitly requests desktop use in this private test sandbox. "
+          "For v1, explicitly call session(action=start, mode=user) before desktop tools. "
           "A window titled 'B:' is open. Task: {goal} "
           "Work until the task is done, then reply DONE. Do not ask questions.")
 RUN_TIMEOUT_S = 420

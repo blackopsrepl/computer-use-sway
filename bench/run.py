@@ -1,12 +1,7 @@
-"""Benchmark layer 1: scripted arms, measured, in sandbox sways.
+"""Compare pixel and semantic control in private user-session sandboxes.
 
-For every task in bench/tasks: run the legacy arm (screenshot -> click/type at
-oracle-given coordinates -> screenshot, on the user's seat: the pixel loop of
-0.3 and the screenshot harnesses at a perfect-grounding best case) and the v1
-arm (observe/act/run on the agent seat). A user types into their own window
-every 200 ms throughout, with their own keyboard. Measured per arm: success,
-MCP calls, image bytes, response bytes, wall time, user disturbances.
-Gate: v1 succeeds wherever legacy does, and v1 never disturbs the user.
+The gate requires every semantic task to succeed. No concurrent user input:
+direct control intentionally shares focus and pointer with the human.
 """
 
 from __future__ import annotations
@@ -24,7 +19,6 @@ from typing import Any
 from computer_use_sway import core, desktop, launch, sandbox, session
 from computer_use_sway.server import call_tool
 
-from .user import UserSimulation
 
 ROOT = Path(__file__).resolve().parent
 TASKS = ROOT / "tasks"
@@ -153,7 +147,8 @@ class Legacy(Arm):
         self.meter.call("screenshot", {"output": "image", "include_cursor": False})
 
     def click(self, x: int, y: int) -> None:
-        self.meter.call("click", {"x": x, "y": y, "seat": "user", "verify": False})
+        # Pango's word extents are floats; the input schema takes layout pixels.
+        self.meter.call("click", {"x": int(x), "y": int(y), "seat": "user", "verify": False})
         # A model's screenshot round-trip takes seconds; 0.6 s also clears
         # GtkMenuShell's 500 ms guard against a release right after popup.
         time.sleep(0.6)
@@ -186,11 +181,11 @@ class Legacy(Arm):
             self.look()
 
 
-CONDITIONS = (("legacy", "idle"), ("legacy", "active"), ("v1", "idle"), ("v1", "active"))
+CONDITIONS = (("legacy", "idle"), ("v1", "idle"))
 ARMS: dict[str, type[Arm]] = {}
 
 
-def run_arm(kind: type[Arm], task: dict[str, Any], typing: bool) -> dict[str, Any]:
+def run_arm(kind: type[Arm], task: dict[str, Any]) -> dict[str, Any]:
     sess = session.Session()
     session.reset_for_tests(sess)
     sess.sandbox_factory = lambda: sandbox.Sandbox(width=1280, height=800)
@@ -198,8 +193,6 @@ def run_arm(kind: type[Arm], task: dict[str, Any], typing: bool) -> dict[str, An
     try:
         box = sess.sandbox()
         log = box.root / "bench.jsonl"
-        user = UserSimulation(sess, ORACLE, box.root / "oracle.jsonl", typing=typing)
-        user.start()
         arm = kind(sess, task, log)
         started = time.monotonic()
         error = None
@@ -211,9 +204,8 @@ def run_arm(kind: type[Arm], task: dict[str, Any], typing: bool) -> dict[str, An
         except core.ToolError as exc:
             ok, error = False, str(exc)
         wall = time.monotonic() - started
-        disturbances = user.stop()
         result = {"success": ok, "calls": arm.meter.calls, "image_bytes": arm.meter.image_bytes,
-                  "response_bytes": arm.meter.response_bytes, "wall_s": round(wall, 2), **disturbances}
+                  "response_bytes": arm.meter.response_bytes, "wall_s": round(wall, 2)}
         if error:
             result["error"] = error[:200]
         return result
@@ -223,14 +215,13 @@ def run_arm(kind: type[Arm], task: dict[str, Any], typing: bool) -> dict[str, An
 
 
 def table(results: list[dict[str, Any]]) -> str:
-    rows = ["| task | arm | user | ok | calls | image KiB | response KiB | wall s | focus moves | typing lost |",
-            "|---|---|---|---|---|---|---|---|---|---|"]
+    rows = ["| task | arm | user | ok | calls | image KiB | response KiB | wall s |",
+            "|---|---|---|---|---|---|---|---|"]
     for r in results:
         for arm, cond in CONDITIONS:
             m = r[f"{arm}_{cond}"]
             rows.append(f"| {r['id']} | {arm} | {cond} | {'yes' if m['success'] else 'no'} | {m['calls']} | "
-                        f"{m['image_bytes'] / 1024:.0f} | {m['response_bytes'] / 1024:.1f} | {m['wall_s']} | "
-                        f"{m['focus_moves']} | {m['typing_lost']} |")
+                        f"{m['image_bytes'] / 1024:.0f} | {m['response_bytes'] / 1024:.1f} | {m['wall_s']} |")
     return "\n".join(rows)
 
 
@@ -241,22 +232,19 @@ def summary(results: list[dict[str, Any]]) -> dict[str, Any]:
         out[f"{arm}_{cond}"] = {
             "success": sum(m["success"] for m in ms), "tasks": len(ms), "calls": sum(m["calls"] for m in ms),
             "image_bytes": sum(m["image_bytes"] for m in ms), "response_bytes": sum(m["response_bytes"] for m in ms),
-            "wall_s": round(sum(m["wall_s"] for m in ms), 1),
-            "focus_moves": sum(m["focus_moves"] for m in ms), "typing_lost": sum(m["typing_lost"] for m in ms)}
+            "wall_s": round(sum(m["wall_s"] for m in ms), 1)}
     return out
 
 
 def gate(results: list[dict[str, Any]]) -> list[str]:
     failures = []
     for r in results:
-        for cond in ("idle", "active"):
+        for cond in ("idle",):
             legacy, v1 = r[f"legacy_{cond}"], r[f"v1_{cond}"]
             if legacy["success"] and not v1["success"]:
                 failures.append(f"{r['id']} ({cond} user): v1 failed where legacy succeeded")
             if not v1["success"]:
                 failures.append(f"{r['id']} ({cond} user): v1 failed")
-            if v1["focus_moves"] or v1["typing_lost"]:
-                failures.append(f"{r['id']} ({cond} user): v1 disturbed the user")
     return failures
 
 
@@ -272,16 +260,19 @@ def main(argv: list[str]) -> int:
     wanted = set(argv)
     tasks = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(TASKS.glob("*.json"))]
     tasks = [t for t in tasks if not wanted or t["id"] in wanted or t["family"] in wanted]
+    if not tasks:
+        print("No matching benchmark tasks", file=sys.stderr)
+        return 2
     results = []
     for task in tasks:
         row: dict[str, Any] = {"id": task["id"], "family": task["family"]}
         for arm, cond in CONDITIONS:
-            row[f"{arm}_{cond}"] = run_arm(Legacy if arm == "legacy" else V1, task, cond == "active")
+            row[f"{arm}_{cond}"] = run_arm(Legacy if arm == "legacy" else V1, task)
         results.append(row)
         print(json.dumps(row), flush=True)
     RESULTS.mkdir(exist_ok=True)
     stamp = datetime.datetime.now().strftime("%Y-%m-%dT%H%M%S")
-    report = {"date": stamp, "summary": summary(results), "results": results, "gate_failures": gate(results)}
+    report = {"contract": "direct-user-session", "date": stamp, "summary": summary(results), "results": results, "gate_failures": gate(results)}
     (RESULTS / f"{stamp}.json").write_text(dump(report), encoding="utf-8")
     (RESULTS / f"{stamp}.md").write_text(table(results) + "\n\n```json\n" + json.dumps(report["summary"], indent=1)
                                          + "\n```\n", encoding="utf-8")

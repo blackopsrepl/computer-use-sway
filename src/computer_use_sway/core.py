@@ -32,7 +32,7 @@ class ToolError(Exception):
     """Expected tool failure reported as MCP tool content.
 
     `code` is an optional machine-readable reason (``stale_ref``,
-    ``agent_seat_missing``, ...); the message stays human-readable.
+    ``session_required``, ...); the message stays human-readable.
     """
 
     def __init__(self, message: str = "", code: str | None = None) -> None:

@@ -1,11 +1,11 @@
-"""T1 transports and T2 agent seat (ports of spikes 1b, 3, 7c, 8, 11, 12, 13, 14)."""
+"""Direct user-seat transports in a private compositor."""
 
 from __future__ import annotations
 
 import time
 import unittest
 
-from computer_use_sway import core, desktop, install, vinput
+from computer_use_sway import core, desktop
 
 from harness import Box, needs_sway, require
 
@@ -16,7 +16,7 @@ class TransportTests(unittest.TestCase):
         with Box() as b:
             ipc = desktop.ipc()
             self.assertEqual(ipc.tree()["type"], "root")
-            self.assertGreaterEqual(len(ipc.outputs()), 2)  # user output + agent output
+            self.assertGreaterEqual(len(ipc.outputs()), 1)
             t0 = time.monotonic()
             ipc.command("workspace 2")
             event = b.sess.log.wait_for(lambda e: e[1] == "workspace" and e[2].get("change") == "init", t0, 2.0)
@@ -61,123 +61,3 @@ class TransportTests(unittest.TestCase):
                     b.call("key", {"key": "a", "modifiers": ["ctrl"], "seat": "user"})
                     b.call("key", {"key": "BackSpace", "seat": "user"})
                     b.wait(lambda: b.title(win["id"]).split(" — ")[0] == "T:", 5)
-
-
-@needs_sway
-class SeatTests(unittest.TestCase):
-    def test_t2_1_seat_isolation(self) -> None:
-        with Box() as b:
-            a, bw = b.oracle("A"), b.oracle("B")
-            b.user_pointer().click(*b.center_of(a, "A", "entry"))
-            b.call("focus_window", {"con_id": bw["id"], "seat": "agent"})
-            b.call("click", {**dict(zip("xy", b.center_of(bw, "B", "entry"))), "seat": "agent"})
-            for user_ch, agent_ch in zip("usera", "agent"):
-                b.user_keyboard().type_text(user_ch)
-                b.call("type_text", {"text": agent_ch, "seat": "agent"})
-            b.wait(lambda: b.text_of("A") == "usera" and b.text_of("B") == "agent", 5)
-            self.assertEqual(b.seat_focus("seat0"), a["id"])
-            self.assertEqual(b.seat_focus(install.SEAT), bw["id"])
-            desktop.ipc().command(f"[con_id={bw['id']}] focus")  # IPC acts on seat0 only
-            self.assertEqual((b.seat_focus("seat0"), b.seat_focus(install.SEAT)), (bw["id"], bw["id"]))
-            desktop.ipc().command(f"[con_id={a['id']}] focus")
-            b.sess.agent().focus(a["id"])  # the binding moves the agent only
-            b.sess.agent().focus(bw["id"])
-            self.assertEqual((b.seat_focus("seat0"), b.seat_focus(install.SEAT)), (a["id"], bw["id"]))
-
-    def test_t2_2_bringup_and_launch_leave_the_user_alone(self) -> None:
-        with Box() as b:
-            a = b.oracle("A")
-            b.user_pointer().click(*b.center_of(a, "A", "entry"))
-            b.user_keyboard().type_text("u1")
-            win = b.launch("gtk3")
-            self.assertEqual(win["workspace"], install.SEAT)
-            self.assertEqual(b.seat_focus("seat0"), a["id"])
-            agent_output = b.sess.agent().output
-            spaces = desktop.ipc().workspaces()
-            self.assertIn((install.SEAT, agent_output), [(w["name"], w["output"]) for w in spaces])
-            self.assertFalse([w for w in spaces if w["name"] == install.SEAT and w["output"] != agent_output])
-            b.user_keyboard().type_text("u2")
-            b.wait(lambda: b.text_of("A") == "u1u2", 5)
-
-    def test_t2_4_a_seat_command_never_routes_agent_input_to_the_user(self) -> None:
-        # Any runtime `seat ...` command re-sorts devices and the agent's fall
-        # back to seat0 with no IPC event [S12].
-        with Box() as b:
-            a = b.oracle("A")
-            b.user_pointer().click(*b.center_of(a, "A", "entry"))
-            focus = b.seat_focus()
-            app = b.launch("gtk3")
-            seat0_devices = len(next(s for s in desktop.get_seats() if s["name"] == "seat0")["devices"])
-            typed = ""
-            for cmd in ("seat * xcursor_theme default 24", "seat seat0 hide_cursor 3000",
-                        f"seat {install.SEAT} xcursor_theme default 24"):
-                with self.subTest(command=cmd):
-                    desktop.ipc().command(cmd)
-                    out = b.call("act", {"target": {"query": {"role": "entry", "name": "Field",
-                                                              "window": {"con_id": app["id"]}}},
-                                         "action": "type", "text": "S"})
-                    typed += "S"
-                    self.assertIn(out["effect"], ("confirmed", "changed"), out)
-                    self.assertEqual(b.title(app["id"]), "T:" + typed)
-                    self.assertEqual(b.text_of("A"), "")  # nothing reached the user's field
-                    self.assertEqual(b.seat_focus(), focus)
-                    seats = {s["name"]: len(s["devices"]) for s in desktop.get_seats()}
-                    self.assertEqual((seats[install.SEAT], seats["seat0"]), (2, seat0_devices))
-
-    def test_t2_3_reload_recovery(self) -> None:
-        with Box() as b:
-            a = b.oracle("A")
-            b.user_pointer().click(*b.center_of(a, "A", "entry"))
-            for n in ("gtk3", "gtk4", "qt6"):
-                require(self, n)
-            apps = [b.launch(n) for n in ("gtk3", "gtk4", "qt6")]
-            user_outputs = {o["name"]: (o["rect"]["x"], o["rect"]["y"]) for o in desktop.get_outputs()
-                            if o["name"] != b.sess.agent().output}
-            seat0_devices = len(next(s for s in desktop.get_seats() if s["name"] == "seat0")["devices"])
-            t0 = time.monotonic()
-            desktop.ipc().command("reload")
-            self.assertIsNotNone(b.sess.log.wait_for(
-                lambda e: e[1] == "workspace" and e[2].get("change") == "reload", t0, 3.0))
-            agent = b.sess._agent
-            b.wait(lambda: agent.stale == "reload", 2)
-            with self.assertRaises(vinput.AgentSeatLost):
-                agent.gate()
-            b.sess.agent()  # ensure_ready recovers
-
-            def counts() -> tuple[int, int]:
-                seats = {s["name"]: s for s in desktop.get_seats()}
-                return len(seats[install.SEAT]["devices"]), len(seats["seat0"]["devices"])
-
-            # The agent's pointer and keyboard; seat0 keeps exactly what it had.
-            b.wait(lambda: counts() == (2, seat0_devices), 5)
-            outs = {o["name"]: o["rect"] for o in desktop.get_outputs()}
-            self.assertEqual(outs[agent.output]["x"], 100000)
-            for name, (x, y) in user_outputs.items():
-                self.assertEqual((outs[name]["x"], outs[name]["y"]), (x, y))
-            for win in apps:
-                out = b.call("act", {"target": {"query": {"role": "entry", "name": "Field",
-                                                          "window": {"con_id": win["id"]}}},
-                                     "action": "type", "text": "R"})
-                self.assertIn(out["effect"], ("confirmed", "changed"), out)
-                self.assertTrue(b.title(win["id"]).endswith("R"))
-            b.user_keyboard().type_text("u")
-            b.wait(lambda: b.text_of("A") == "u", 5)
-            self.assertEqual(b.seat_focus("seat0"), a["id"])
-
-    def test_t2_4_idle_gate_is_per_seat(self) -> None:
-        with Box() as b:
-            b.oracle("A")
-            sentinel = b.sess.sentinel()
-            self.assertTrue(sentinel.wait_user_idle(400, 3000))
-            b.call("type_text", {"text": "x", "seat": "agent"})
-            for _ in range(6):
-                sentinel.conn.dispatch(0.05)
-            self.assertTrue(sentinel.idle, "agent input must not count as user activity")
-            b.user_keyboard().type_text("y")
-            for _ in range(6):
-                sentinel.conn.dispatch(0.05)
-            self.assertFalse(sentinel.idle)
-
-
-if __name__ == "__main__":
-    unittest.main()

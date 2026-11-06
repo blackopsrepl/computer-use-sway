@@ -11,9 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import capture, core, desktop, geometry, install, ocr, query, refs, toolkits
+from . import capture, core, desktop, geometry, ocr, query, refs, toolkits
 
-SCOPES = ("agent", "focused", "visible", "window")
+SCOPES = ("focused", "visible", "window")
 LANDMARKS = {"frame", "window", "dialog", "alert", "menu", "menu bar", "page tab list", "tool bar"}
 TEXTUAL = {"label", "heading", "static", "paragraph", "text", "link", "list item", "table cell",
            "tree item", "page tab", "menu item", "status bar", "notification", "caption"}
@@ -34,17 +34,9 @@ class WindowScene:
     ocr_used: bool = False
 
 
-def learned(session: Any) -> toolkits.Learned:
-    value = getattr(session, "_learned", None)
-    if value is None:
-        value = toolkits.Learned()
-        session._learned = value
-    return value
-
-
 def windows_in_scope(session: Any, scope: str, selector: dict[str, Any] | None) -> list[dict[str, Any]]:
     if scope not in SCOPES:
-        raise core.ToolError("scope must be agent, focused, visible, or window")
+        raise core.ToolError("scope must be focused, visible, or window")
     tree = desktop.get_tree()
     windows = desktop.all_windows(tree)
     if scope == "window":
@@ -52,11 +44,9 @@ def windows_in_scope(session: Any, scope: str, selector: dict[str, Any] | None) 
             raise core.ToolError("scope window needs a window selector")
         found = desktop.find_window(selector)
         return [w for w in windows if w["id"] == found["id"]]
-    if scope == "agent":
-        return [w for w in windows if w.get("workspace") == install.SEAT]
     if scope == "visible":
         return [w for w in windows if w.get("visible")]
-    seat = install.SEAT if session.default_seat() == "agent" else (session.user_seat or "seat0")
+    seat = session.user_seat or "seat0"
     focus = desktop.seat_focus(seat)
     return [w for w in windows if w["id"] == focus]
 
@@ -99,7 +89,7 @@ def a11y_elements(session: Any, client: Any, ws: WindowScene, outputs: list[dict
     tk_name, tk_version = client.toolkit(app)
     ws.toolkit = tk_name
     profile = toolkits.classify(tk_name, win.get("app_id") or win.get("class"), toolkit_version=tk_version)
-    ws.profile = learned(session).profile(profile, win.get("app_id"))
+    ws.profile = profile
     frame = client.frame_for_window(app, win.get("name"))
     if frame is None:
         return False
@@ -192,7 +182,7 @@ def ocr_elements(ws: WindowScene, max_elements: int) -> None:
         ))
 
 
-def collect(session: Any, scope: str = "agent", window: dict[str, Any] | None = None,
+def collect(session: Any, scope: str = "focused", window: dict[str, Any] | None = None,
             q: query.Query | None = None, max_elements: int = 150, ocr_mode: str = "auto") -> dict[str, Any]:
     if q is not None and q.window is not None:
         scope, window = "window", q.window
@@ -209,7 +199,7 @@ def collect(session: Any, scope: str = "agent", window: dict[str, Any] | None = 
     scenes, truncated = [], False
     for win in wins:
         base = toolkits.classify(None, win.get("app_id") or win.get("class"))
-        ws = WindowScene(win=win, profile=learned(session).profile(base, win.get("app_id")), a11y=False)
+        ws = WindowScene(win=win, profile=base, a11y=False)
         if client is not None:
             try:
                 truncated |= a11y_elements(session, client, ws, outputs, max_elements)
@@ -270,15 +260,8 @@ def render_element(e: refs.Element) -> str:
     return "  " + _clip(" ".join(parts).lstrip(), LINE_LIMIT - 2)
 
 
-def seats_label(profile: toolkits.Profile) -> str:
-    return {True: "agent+user", False: "user only", None: "unknown"}[profile.multi_seat]
-
-
 def render(session: Any, result: dict[str, Any], q: query.Query | None) -> str:
-    agent = session._agent
     head = f"snapshot s{result['snapshot']} · mode {session.mode}"
-    if agent is not None and agent.output:
-        head += f" · agent workspace {install.SEAT} ({agent.output})"
     lines = [head]
     if not result["windows"]:
         lines.append(f"(no windows in scope {result['scope']})")
@@ -286,7 +269,7 @@ def render(session: Any, result: dict[str, Any], q: query.Query | None) -> str:
         w, c = ws.win, ws.win["content"]
         lines.append(
             f"window {w['id']} \"{_clip(w.get('name') or '', 40)}\" app={w.get('app_id') or w.get('class')} "
-            f"toolkit={ws.profile.name} seats={seats_label(ws.profile)} ws={w.get('workspace')} "
+            f"toolkit={ws.profile.name} ws={w.get('workspace')} "
             f"@{c['x']},{c['y']} {c['width']}x{c['height']} a11y={'on' if ws.a11y else 'off'}"
         )
         for note in ws.notes:
@@ -309,9 +292,7 @@ def observe(session: Any, scope: str | None = None, window: dict[str, Any] | Non
             query_arg: dict[str, Any] | None = None, max_elements: int = 150, ocr_mode: str | None = None,
             image: bool = False) -> core.Result:
     session.ensure_started()
-    if session.mode in ("seat", "sandbox"):
-        session.agent()
-    scope = scope or ("window" if window else ("focused" if session.mode == "user" else "agent"))
+    scope = scope or ("window" if window else "focused")
     q = query.parse(query_arg) if query_arg is not None else None
     result = collect(session, scope, window, q, max_elements, ocr_mode or session.options.get("ocr", "auto"))
     content: list[dict[str, Any]] = [{"type": "text", "text": render(session, result, q)}]

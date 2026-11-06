@@ -1,16 +1,4 @@
-"""Virtual pointer and keyboard bound to one named Sway seat.
-
-`zwlr_virtual_pointer_v1` and `zwp_virtual_keyboard_v1` attach their device
-to the wl_seat they are created on. That is what gives the agent its own seat:
-devices on `cus-agent` move the agent's pointer and type into the agent's
-focused window, while seat0 stays the user's.
-
-Measured facts this module depends on (docs/plan-1.0/FINDINGS.md):
-- absolute motion + button through the virtual pointer drags correctly (I2);
-- wlroots ignores modifier *key* events from a virtual keyboard, so the
-  modifier mask is sent explicitly with `modifiers` around every chord (I4);
-- events sent right after device creation can be dropped, hence the pause.
-"""
+"""Virtual pointer and keyboard attached to the existing user seat."""
 
 from __future__ import annotations
 
@@ -36,10 +24,6 @@ KEYMAP_SETTLE_S = 0.1  # clients apply a new keymap asynchronously
 
 Gate = Callable[[], None] | None
 Extent = Callable[[], tuple[int, int]]
-
-
-class AgentSeatLost(core.ToolError):
-    """The agent seat lost its devices (a Sway reload); nothing was sent."""
 
 
 def _now_ms() -> int:
@@ -126,6 +110,11 @@ class VirtualPointer:
             time.sleep(0.01)
 
     def destroy(self) -> None:
+        """Idempotent: a second destroy request on a dead id is a protocol
+        error that would end the whole Wayland connection."""
+        if getattr(self, "destroyed", False):
+            return
+        self.destroyed = True
         try:
             self.conn.send(self.id, VPTR_DESTROY)
         except core.ToolError:
@@ -140,9 +129,9 @@ class VirtualKeyboard:
         self.id = conn.new_id()
         conn.send(manager, VKBD_MGR_CREATE, struct.pack("=II", seat_obj, self.id))
         self.slots: list[str | None] = [None] * len(keymap.SLOTS)
-        self.pinned = set(keymap.AGENT_KEYSYMS)
+        self.pinned: set[str] = set()
         self._used: dict[str, float] = {}
-        self._assign(list(keymap.AGENT_KEYSYMS), settle=False)
+        self._upload()
         self.sent = 0
 
     @property
@@ -265,6 +254,10 @@ class VirtualKeyboard:
         return typed
 
     def destroy(self) -> None:
+        """Idempotent, as VirtualPointer.destroy."""
+        if getattr(self, "destroyed", False):
+            return
+        self.destroyed = True
         try:
             self.conn.send(self.id, VKBD_DESTROY)
         except core.ToolError:

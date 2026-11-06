@@ -10,7 +10,7 @@ import subprocess
 import sys
 from typing import Any
 
-from . import core, desktop, install
+from . import core, desktop
 from .core import ToolError, command_available, command_argv, require_binaries
 from .timeline import stream_path
 from .version import SERVER_NAME, SERVER_VERSION
@@ -18,7 +18,6 @@ from .version import SERVER_NAME, SERVER_VERSION
 WAYLAND_GLOBALS = (
     "zwlr_virtual_pointer_manager_v1",
     "zwp_virtual_keyboard_manager_v1",
-    "ext_idle_notifier_v1",
     "zwlr_screencopy_manager_v1",
 )
 
@@ -118,15 +117,13 @@ def ocr_report() -> dict[str, Any]:
 
 def self_test() -> int:
     core.require_session()
-    seat_status = install.status()
     wayland = wayland_report()
     summary = {
-        "ok": bool(seat_status["ok"] and wayland["ok"]),
+        "ok": bool(wayland["ok"]),
         "server": SERVER_NAME,
         "version": SERVER_VERSION,
         "environment": environment(),
         "user_seat": desktop.detect_seat(),
-        "agent_seat": seat_status,
         "wayland": wayland,
         "ocr": ocr_report(),
         "outputs": [
@@ -134,8 +131,6 @@ def self_test() -> int:
         ],
         "focused_window": desktop.get_focused_window(),
     }
-    if not seat_status["ok"]:
-        summary["remedy"] = "run: computer-use-sway --install-sway-config"
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0 if summary["ok"] else 1
 
@@ -192,7 +187,6 @@ def doctor() -> int:
             ],
             "focused_window": desktop.get_focused_window(),
         }
-        report["agent_seat"] = install.status()
         report["wayland"] = wayland_report()
         report["a11y"] = a11y_report()
         report["electron_without_a11y"] = electron_without_a11y()
@@ -213,25 +207,12 @@ def doctor() -> int:
     return 0
 
 
-def sway_config(action: str) -> int:
-    core.require_session()
-    status = install.install() if action == "install" else install.uninstall()
-    print(json.dumps(status, indent=2, sort_keys=True))
-    if action == "install":
-        return 0 if status["ok"] else 1
-    return 0 if not status["file_present"] else 1
-
-
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Computer Use MCP server for Sway")
     parser.add_argument("--self-test", action="store_true", help="run non-mutating checks")
     parser.add_argument("--doctor", action="store_true", help="print detailed diagnostics")
     parser.add_argument("--install-codex-mcp", action="store_true", help="register with Codex")
     parser.add_argument("--uninstall-codex-mcp", action="store_true", help="remove Codex registration")
-    parser.add_argument("--install-sway-config", action="store_true",
-                        help="declare the agent seat in ~/.config/sway/config.d and reload sway")
-    parser.add_argument("--uninstall-sway-config", action="store_true",
-                        help="remove the agent seat fragment and reload sway")
     return parser.parse_args(argv)
 
 
@@ -246,10 +227,6 @@ def main(argv: list[str]) -> int:
             return install_codex_mcp()
         if args.uninstall_codex_mcp:
             return uninstall_codex_mcp()
-        if args.install_sway_config:
-            return sway_config("install")
-        if args.uninstall_sway_config:
-            return sway_config("uninstall")
         from .server import run_mcp_server
 
         return run_mcp_server()

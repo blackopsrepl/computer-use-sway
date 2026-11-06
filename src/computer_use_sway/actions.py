@@ -1,25 +1,16 @@
-"""`act`: do one thing to one element and report whether it worked.
-
-The delivery ladder, climbed only while the effect is not established:
-1. semantic — an AT-SPI action/text/value call; no input device at all;
-2. agent — the agent's own seat (pointer/keyboard), focused on the window by
-   the agent binding; the user's focus is snapshotted and restored;
-3. foreground — only when policy allows and the user is idle: a brief IPC
-   focus swap on seat0 for toolkits that ignore other seats (Chromium,
-   Electron, terminals), always restored in `finally`.
-"""
+"""Verified semantic actions, then direct input on the user session."""
 
 from __future__ import annotations
 
 import time
 from typing import Any
 
-from . import core, desktop, geometry, query, scene, toolkits, verify, vinput
-from .actions_delivery import Delivery, device_form, foreground, needs_keyboard, pointer_start, semantic
+from . import core, desktop, geometry, query, scene, toolkits, verify
+from .actions_delivery import Delivery, device_form, needs_keyboard, pointer_start, semantic
 
 ACTIONS = ("press", "activate", "toggle", "focus", "set_text", "type", "key", "click", "double_click",
            "right_click", "scroll", "drag_to", "set_value", "select")
-DELIVERIES = ("auto", "semantic", "agent", "foreground")
+DELIVERIES = ("auto", "semantic", "user")
 
 
 TEXT_ACTIONS = ("set_text", "type")
@@ -83,10 +74,10 @@ def resolve_to(session: Any, to: Any) -> tuple[int, int]:
 def profile_for(session: Any, element: Any, con_id: int | None) -> toolkits.Profile:
     if element is not None:
         base = next((p for p in toolkits.PROFILES.values() if p.name == element.profile), toolkits.PROFILES["unknown"])
-        return scene.learned(session).profile(base, element.app_id)
+        return base
     win = desktop.window_by_id(con_id) if con_id is not None else None
     app_id = (win or {}).get("app_id") or (win or {}).get("class")
-    return scene.learned(session).profile(toolkits.classify(None, app_id), (win or {}).get("app_id"))
+    return toolkits.classify(None, app_id)
 
 
 def expectation(action: str, element: Any, d: Delivery, client: Any) -> verify.Expectation | None:
@@ -132,32 +123,6 @@ def run_rung(session: Any, rung: str, action: str, element: Any, con_id: int | N
         out = verify.verdict(session, base, expect) if do_verify else verify.disabled()
         out["disturbed_user"] = False
         return out
-    if rung == "agent":
-        agent = session.agent()
-        sentinel = session.sentinel()
-        snap = sentinel.snapshot()
-        try:
-            if con_id is not None:
-                agent.focus(con_id)
-            point = fresh_point(session, element, point)
-            try:
-                hover_first(agent.devices, action, element, point, con_id, do_verify)
-                base = verify.take_baseline(session, element, con_id, want_pixels=do_verify)
-                device_form(agent.devices, action, element, point, d)
-            except vinput.AgentSeatLost:
-                # A reload landed before anything was sent: recover the seat
-                # (devices, pins, output) and deliver once more.
-                agent.ensure_ready()
-                if con_id is not None:
-                    agent.focus(con_id)
-                hover_first(agent.devices, action, element, point, con_id, do_verify)
-                base = verify.take_baseline(session, element, con_id, want_pixels=do_verify)
-                device_form(agent.devices, action, element, point, d)
-            out = verify.verdict(session, base, expect) if do_verify else verify.disabled()
-        finally:
-            disturbed = sentinel.restore(snap)
-        out["disturbed_user"] = disturbed
-        return out
     if rung == "user":
         sess_devices = session.user_devices()
         if con_id is not None:
@@ -169,7 +134,7 @@ def run_rung(session: Any, rung: str, action: str, element: Any, con_id: int | N
         out = verify.verdict(session, base, expect) if do_verify else verify.disabled()
         out["disturbed_user"] = True
         return out
-    return foreground(session, action, element, con_id, point, d, expect, do_verify)
+    raise core.ToolError("unknown delivery")
 
 
 def ladder(session: Any, action: str, element: Any, profile: toolkits.Profile, delivery: str) -> list[str]:
@@ -180,8 +145,6 @@ def ladder(session: Any, action: str, element: Any, profile: toolkits.Profile, d
     if delivery != "auto":
         if delivery == "semantic" and not semantic_ok:
             raise core.ToolError(f"no semantic form of {action} for this target", code="no_semantic")
-        if delivery == "agent" and session.mode == "user":
-            return ["user"]
         return [delivery]
     if element is not None and "popup" in (element.states or []):
         if semantic_ok or (element.actions and action in ("click", "press", "activate")):
@@ -189,21 +152,10 @@ def ladder(session: Any, action: str, element: Any, profile: toolkits.Profile, d
         raise core.ToolError(f"{element.ref} is in a popup menu, whose position no one reports; only its "
                              "semantic actions can reach it", code="popup_no_pointer")
     rungs = ["semantic"] if semantic_ok else []
-    if session.mode == "user":
-        return rungs + ["user"]
-    if profile.multi_seat is not False:
-        rungs.append("agent")
-    if session.options.get("foreground", "idle") != "never":
-        rungs.append("foreground")
-    # A pointer click the seats cannot deliver (single-seat toolkit, seat0
-    # pointer not allowed) still has a meaning: the element's press action.
-    if action == "click" and element is not None and element.source == "a11y" and element.actions:
-        rungs.append("semantic")
-    if (profile.blocking_actions and action in ("press", "click", "toggle") and "agent" in rungs
-            and element is not None and "offscreen" not in (element.states or [])):
-        rungs.remove("agent")
-        rungs.insert(0, "agent")
-    return rungs
+    if (semantic_ok and profile.blocking_actions and action in ("press", "activate", "toggle")
+            and "offscreen" not in (element.states or [])):
+        return ["user", "semantic"]
+    return rungs + ["user"]
 
 
 def act(session: Any, target: Any, action: str, d: Delivery, delivery: str = "auto",
@@ -214,8 +166,6 @@ def act(session: Any, target: Any, action: str, d: Delivery, delivery: str = "au
     if delivery not in DELIVERIES:
         raise core.ToolError(f"delivery must be one of {', '.join(DELIVERIES)}")
     started = time.monotonic()
-    if session.mode in ("seat", "sandbox"):
-        session.agent()
     element, con_id, point = resolve_target(session, target, action)
     if action == "drag_to":
         d.to_point = resolve_to(session, d.to)
@@ -227,8 +177,6 @@ def act(session: Any, target: Any, action: str, d: Delivery, delivery: str = "au
     out: dict[str, Any] | None = None
     used = None
     for rung in rungs:
-        if rung == "foreground" and action in ("set_value",):
-            continue
         try:
             out = run_rung(session, rung, action, element, con_id, point, d, do_verify)
         except core.ToolError as exc:
@@ -248,9 +196,6 @@ def act(session: Any, target: Any, action: str, d: Delivery, delivery: str = "au
         if out.get("blocked") or out["effect"] in ("confirmed", "changed") or not do_verify:
             break
         escalations.append({"rung": rung, "effect": out["effect"]})
-        if rung == "agent" and out["effect"] == "no_change" and profile.multi_seat is None:
-            win = desktop.window_by_id(con_id) if con_id is not None else None
-            scene.learned(session).mark_single_seat(element.app_id if element else (win or {}).get("app_id"))
     if out is None:
         last = escalations[-1] if escalations else {"error": "no rung ran"}
         raise core.ToolError(f"{action} failed on every delivery: {last.get('error')}", code=last.get("code"))

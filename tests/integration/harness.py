@@ -1,8 +1,7 @@
 """Shared harness for the integration suite: a product sandbox per test.
 
 Everything runs in a private nested sway (`session` sandbox mode). The
-"user" is seat0, driven by the session's seat0 virtual devices; the agent
-uses its own seat. Nothing here touches the live session.
+user is seat0, driven directly by the session virtual devices. Nothing here touches the live session.
 """
 
 from __future__ import annotations

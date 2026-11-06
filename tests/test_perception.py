@@ -102,12 +102,6 @@ class ToolkitTests(unittest.TestCase):
             with self.subTest(want=want, app_id=app_id):
                 self.assertEqual(toolkits.classify(name, app_id, toolkit_version=version).name, want)
 
-    def test_learned_single_seat(self) -> None:
-        learned = toolkits.Learned()
-        learned.mark_single_seat("odd.app")
-        self.assertIs(learned.profile(toolkits.PROFILES["unknown"], "odd.app").multi_seat, False)
-        self.assertIsNone(learned.profile(toolkits.PROFILES["unknown"], "other").multi_seat)
-
 
 class FakeNode:
     def __init__(self, role: str, name: str, states: set[str]) -> None:

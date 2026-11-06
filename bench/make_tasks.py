@@ -101,7 +101,7 @@ def multiwindow() -> list[dict]:
     out = []
     for i, code in enumerate(["4821", "7305", "1166", "9902"]):
         expect = f"B:done {code}"
-        v1 = [{"tool": "observe", "args": {"scope": "agent", "query": {"name": "Transfer code"}},
+        v1 = [{"tool": "observe", "args": {"scope": "visible", "query": {"name": "Transfer code"}},
                "capture": {"code": r"Transfer code: (\d+)"}},
               run([{"tool": "act", "args": {"target": q("Code"), "action": "set_text", "text": "{code}"}},
                    {"tool": "act", "args": {"target": q("Apply"), "action": "press"}}, wait_title(expect)])]

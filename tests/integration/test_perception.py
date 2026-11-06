@@ -11,7 +11,7 @@ from computer_use_sway import core, desktop
 from harness import Box, needs_sway, require
 
 SINGLE_SEAT = {"chromium", "electron"}
-FOREGROUND = {"foreground_pointer": True, "idle_ms": 200, "idle_max_wait_ms": 5000}
+FOREGROUND = {}
 # (target, scale, floating) — the 12 cases of spikes/spike4_matrix.py
 MATRIX = [("gtk3", 1, False), ("gtk3-csd", 1, True), ("gtk4", 1, False), ("gtk4", 2, False), ("qt6", 1, False),
           ("qt6", 2, False), ("firefox", 1, False), ("firefox", 2, False), ("chromium", 1, False),
@@ -21,7 +21,7 @@ OCR = [(n, s) for n in ("gtk3", "gtk4", "qt6", "firefox", "chromium") for s in (
 
 def place(b: Box, win: dict, scale: int, floating: bool) -> None:
     ipc = desktop.ipc()
-    if scale != 1:  # the agent output is scale 1; the scaled case is the user's output
+    if scale != 1:  # the sandbox output uses the requested scale
         ipc.command(f"[con_id={win['id']}] move container to workspace 1")
     if floating:
         ipc.command(f"[con_id={win['id']}] floating enable, resize set 900 700, move position 150 50")
@@ -29,7 +29,7 @@ def place(b: Box, win: dict, scale: int, floating: bool) -> None:
 
 
 def delivery(name: str) -> str:
-    return "foreground" if name in SINGLE_SEAT else "agent"
+    return "user"
 
 
 @needs_sway
@@ -70,10 +70,15 @@ class RefTests(unittest.TestCase):
         with Box() as b:
             win = b.launch("gtk3")
             place(b, win, 1, True)
-            ref = b.ref(win["id"], "Hit")
+            # Movement preserves accessibility identity, not OCR identity:
+            # an OCR crop is intentionally invalid once its window moves.
+            b.call("wait_for", {"condition": {"element": {"role": "button", "name": "Hit",
+                                  "window": {"con_id": win["id"]}}}, "timeout_ms": 5000})
+            ref = b.ref(win["id"], "Hit", role="button")
+            self.assertEqual(b.call("read", {"ref": ref})["source"], "a11y")
             desktop.ipc().command(f"[con_id={win['id']}] move position 400 200")
             time.sleep(0.5)
-            out = b.call("act", {"target": {"ref": ref}, "action": "click", "delivery": "agent"})
+            out = b.call("act", {"target": {"ref": ref}, "action": "click", "delivery": "user"})
             self.assertIn(out["effect"], ("confirmed", "changed"), out)
             b.wait(lambda: "T:hit" in b.title(win["id"]), 5)
 
@@ -94,31 +99,3 @@ class RefTests(unittest.TestCase):
             with self.assertRaises(core.ToolError) as caught:
                 b.call("read", {"ref": ref})
             self.assertEqual(caught.exception.code, "stale_ref")
-
-
-@needs_sway
-class ScreenshotTests(unittest.TestCase):
-    def test_p3_the_default_screenshot_is_the_users_outputs_only(self) -> None:
-        """Every agent output is left out, another server's included [P3]."""
-        import struct
-
-        with Box() as b:
-            b.sess.agent()
-            ipc = desktop.ipc()
-            before = {o["name"] for o in desktop.get_outputs()}
-            ipc.command("create_output")  # another server's agent output
-            other = next(o["name"] for o in desktop.get_outputs() if o["name"] not in before)
-            ipc.command(f"output {other} position 200000 0")
-            try:
-                path = f"{b.assets}/default.png"
-                b.call("screenshot", {"save_path": path})
-                with open(path, "rb") as f:
-                    head = f.read(24)
-                self.assertEqual(head[:8], b"\x89PNG\r\n\x1a\n")
-                self.assertEqual(struct.unpack(">II", head[16:24]), (1280, 800))
-            finally:
-                ipc.command(f"output {other} unplug")
-
-
-if __name__ == "__main__":
-    unittest.main()

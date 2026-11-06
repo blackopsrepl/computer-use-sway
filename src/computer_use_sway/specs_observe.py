@@ -12,19 +12,19 @@ def specs() -> list[dict[str, Any]]:
     return [
         {
             "name": "screen_info",
-            "description": "Inspect outputs (including the agent output), seats, mode, focused window, and required binaries.",
+            "description": "Inspect outputs, seats, mode, focused window, and required binaries.",
             "annotations": READ_ONLY,
             "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
         },
         {
             "name": "screenshot",
-            "description": "Capture the user's screen (default), a region, one window, or one output (target_output 'agent' for the agent output) as PNG. Use only when you need pixels; observe is cheaper. Pass save_path to write it to disk and return text-only metadata instead.",
+            "description": "Capture the user's screen (default), a region, one window, or one output as PNG. Use only when you need pixels; observe is cheaper. Pass save_path to write it to disk and return text-only metadata instead.",
             "annotations": READ_ONLY,
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "window": {"type": "object", "description": "Crop to one window: {con_id|app_id|class|title, match}."},
-                    "target_output": {"type": "string", "description": "Capture one output by name, or 'agent' for the agent output."},
+                    "target_output": {"type": "string", "description": "Capture one output by name."},
                     "include_cursor": {"type": "boolean", "default": True},
                     "output": {"type": ["string", "null"], "enum": ["image", "data_url", "both", None]},
                     "save_path": {
@@ -70,8 +70,8 @@ def specs() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "seat": {"type": "string", "enum": ["agent", "user"],
-                             "description": "agent: the agent's own seat (default in seat/sandbox mode). user: the user's seat0 pointer and keyboard (default in user mode)."},
+                    "seat": {"type": "string", "enum": ["user"],
+                             "description": "Direct input on the user session."},
                     "max_bytes": {
                         "type": "integer",
                         "minimum": 1,

@@ -35,7 +35,7 @@ class Gtk3DialogTests(unittest.TestCase):
             log = str(Path(b.assets) / "bench.jsonl")
             b.call("launch", {"argv": [PY, BENCH_APP, "dialogs", "x.pdf", log]})
             out = press(b, "Delete x.pdf")
-            self.assertEqual(out["delivery"], "agent", "gtk3 presses go through the pointer first")
+            self.assertEqual(out["delivery"], "user", "gtk3 presses go through the pointer first")
             found = b.call("wait_for", {"condition": {"element": {"name": "Delete", "match": "exact",
                                                                   "role": "push button"}}, "timeout_ms": 5000})
             self.assertTrue(found["satisfied"], found)
@@ -50,7 +50,7 @@ class PopupMenuTests(unittest.TestCase):
             log = str(Path(b.assets) / "bench.jsonl")
             b.call("launch", {"argv": [PY, BENCH_APP, "menus", "-", log]})
             press(b, "File")
-            listing = b.call("observe", {"scope": "agent", "query": {"name": "Export PDF", "match": "exact"}})
+            listing = b.call("observe", {"scope": "visible", "query": {"name": "Export PDF", "match": "exact"}})
             self.assertIn("[popup]", listing)
             out = press(b, "Export PDF")
             self.assertEqual(out["delivery"], "semantic")
@@ -80,7 +80,7 @@ class QtWidgetsTests(unittest.TestCase):
                 self.skipTest("needs qmake6 and Qt6 Widgets headers")
             with Box() as b:
                 b.call("launch", {"argv": [str(binary)], "env": {"QT_LINUX_ACCESSIBILITY_ALWAYS_ON": "1"}})
-                listing = b.call("observe", {"scope": "agent"})
+                listing = b.call("observe", {"scope": "visible"})
                 self.assertIn('push button "Delete x.pdf"', listing)
                 out = press(b, "Delete x.pdf")
                 self.assertEqual(out["delivery"], "semantic")

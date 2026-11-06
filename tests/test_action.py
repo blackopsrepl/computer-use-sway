@@ -62,32 +62,6 @@ class PlanTests(unittest.TestCase):
 
 
 class LaunchTests(unittest.TestCase):
-    def test_script_quotes_and_keeps_the_activation_token(self) -> None:
-        text = launch.script(["/usr/bin/app", "a b", "it's"], "/tmp/x y", {"FOO": "1 2"})
-        self.assertIn("cd '/tmp/x y' || exit 1", text)
-        self.assertIn("export FOO='1 2'", text)
-        self.assertIn("reaper.py /usr/bin/app 'a b' 'it'\"'\"'s'", text)
-        self.assertTrue(text.splitlines()[-1].startswith("exec "))
-        # sway's activation token must reach the app: it places Qt/Chromium windows
-        self.assertNotIn("XDG_ACTIVATION_TOKEN", text)
-
-    def test_the_reaper_reports_the_child_pid_and_does_not_pass_the_variable_on(self) -> None:
-        import os
-        import subprocess
-        import sys
-        import tempfile
-        from pathlib import Path
-
-        with tempfile.TemporaryDirectory() as tmp:
-            pid_file, seen = Path(tmp) / "child.pid", Path(tmp) / "env"
-            env = dict(os.environ, COMPUTER_USE_SWAY_PIDFILE=str(pid_file))
-            code = f"import os; open({str(seen)!r}, 'w').write(os.environ.get('COMPUTER_USE_SWAY_PIDFILE', '-'))"
-            subprocess.run([sys.executable, str(launch.REAPER), sys.executable, "-c", code], env=env, check=True)
-            self.assertGreater(int(pid_file.read_text()), 1)
-            self.assertEqual(seen.read_text(), "-")
-        text = launch.script(["/usr/bin/app"], None, {}, Path("/run/x/child.pid"))
-        self.assertIn("export COMPUTER_USE_SWAY_PIDFILE=/run/x/child.pid", text)
-
     def test_a11y_flag_added_once(self) -> None:
         argv, profile = launch.with_a11y_flags(["chromium", "--force-renderer-accessibility", "x"], True)
         self.assertEqual(argv.count("--force-renderer-accessibility"), 1)

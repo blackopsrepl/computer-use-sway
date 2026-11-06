@@ -9,22 +9,14 @@ from computer_use_sway import actions, core, query, refs, scene, swayipc, toolki
 from computer_use_sway.actions_delivery import Delivery
 
 
-class FakeAgent:
-    output = "HEADLESS-2"
-
-
 class FakeSession:
-    def __init__(self, mode: str = "seat", **options) -> None:
+    def __init__(self, mode: str = "user", **options) -> None:
         self.mode = mode
-        self.options = {"foreground": "idle", "ocr": "auto", "settle_ms": 0, **options}
-        self._agent = FakeAgent()
+        self.options = {"user": "idle", "ocr": "auto", "settle_ms": 0, **options}
         self.log = swayipc.EventLog()
 
     def ensure_started(self) -> None:
         pass
-
-    def agent(self):
-        return self._agent
 
     def a11y_or_none(self):
         return None
@@ -39,23 +31,23 @@ def element(**kw) -> refs.Element:
 
 class RenderTests(unittest.TestCase):
     def test_rendering_is_byte_exact(self) -> None:
-        win = {"id": 41, "name": "Settings", "app_id": "org.gnome.Settings", "workspace": "cus-agent",
-               "content": {"x": 100002, "y": 26, "width": 1916, "height": 1052}}
+        win = {"id": 41, "name": "Settings", "app_id": "org.gnome.Settings", "workspace": "1",
+               "content": {"x": 2, "y": 26, "width": 1916, "height": 1052}}
         ws = scene.WindowScene(win=win, profile=toolkits.PROFILES["gtk4"], a11y=True)
         ws.elements = [
-            element(ref="s7:1", name="Back", states=["focusable"], actions=["press"], bounds=(100014, 38, 34, 34)),
+            element(ref="s7:1", name="Back", states=["focusable"], actions=["press"], bounds=(14, 38, 34, 34)),
             element(ref="s7:2", role="entry", name="Search", states=["editable", "focused"], actions=[],
-                    bounds=(100060, 38, 300, 34), preview=""),
-            element(ref="s7:3", source="ocr", role="text", name="Wi-Fi", actions=[], bounds=(100020, 120, 60, 18)),
+                    bounds=(60, 38, 300, 34), preview=""),
+            element(ref="s7:3", source="ocr", role="text", name="Wi-Fi", actions=[], bounds=(20, 120, 60, 18)),
         ]
-        text = scene.render(FakeSession(), {"snapshot": 7, "windows": [ws], "truncated": False, "scope": "agent"}, None)
+        text = scene.render(FakeSession(), {"snapshot": 7, "windows": [ws], "truncated": False, "scope": "user"}, None)
         self.assertEqual(text, "\n".join([
-            "snapshot s7 · mode seat · agent workspace cus-agent (HEADLESS-2)",
-            'window 41 "Settings" app=org.gnome.Settings toolkit=gtk4 seats=agent+user ws=cus-agent '
-            "@100002,26 1916x1052 a11y=on",
-            '  s7:1 push button "Back" [focusable] @100014,38 34x34 actions=press',
-            '  s7:2 entry "Search" [editable,focused] @100060,38 300x34 value=""',
-            '  s7:3 text "Wi-Fi" @100020,120 60x18 (ocr)',
+            "snapshot s7 · mode user",
+            'window 41 "Settings" app=org.gnome.Settings toolkit=gtk4 ws=1 '
+            "@2,26 1916x1052 a11y=on",
+            '  s7:1 push button "Back" [focusable] @14,38 34x34 actions=press',
+            '  s7:2 entry "Search" [editable,focused] @60,38 300x34 value=""',
+            '  s7:3 text "Wi-Fi" @20,120 60x18 (ocr)',
         ]))
 
     def test_query_filter_keeps_window_headers_and_notes(self) -> None:
@@ -66,7 +58,6 @@ class RenderTests(unittest.TestCase):
         text = scene.render(FakeSession(), {"snapshot": 1, "windows": [ws], "truncated": True, "scope": "visible"},
                             query.parse({"name": "Stop", "match": "exact"}))
         self.assertIn("window 3", text)
-        self.assertIn("seats=user only", text)
         self.assertIn("note: a11y: off", text)
         self.assertNotIn('"Go"', text)
         self.assertIn('"Stop"', text)
@@ -87,7 +78,7 @@ class RenderTests(unittest.TestCase):
                "content": {"x": 0, "y": 0, "width": 10, "height": 10}}
         ws = scene.WindowScene(win=win, profile=toolkits.PROFILES["gtk3"], a11y=True)
         ws.elements = [element(name="Item 1"), element(ref="s1:2", name="Item 29", states=["offscreen"])]
-        result = {"snapshot": 1, "windows": [ws], "truncated": False, "scope": "agent"}
+        result = {"snapshot": 1, "windows": [ws], "truncated": False, "scope": "user"}
         plain = scene.render(FakeSession(), result, None)
         self.assertNotIn("Item 29", plain)
         self.assertIn("(+1 scrolled out of view", plain)
@@ -114,24 +105,24 @@ class LadderTests(unittest.TestCase):
     def test_rungs_per_profile_and_mode(self) -> None:
         gtk, chrome = toolkits.PROFILES["gtk3"], toolkits.PROFILES["chromium"]
         s = FakeSession()
-        self.assertEqual(actions.ladder(s, "set_text", element(), gtk, "auto"), ["semantic", "agent", "foreground"])
+        self.assertEqual(actions.ladder(s, "set_text", element(), gtk, "auto"), ["semantic", "user"])
         # gtk3 runs a pressed button's handler inside DoAction: pointer first [A10]
-        self.assertEqual(actions.ladder(s, "press", element(), gtk, "auto"), ["agent", "semantic", "foreground"])
+        self.assertEqual(actions.ladder(s, "press", element(), gtk, "auto"), ["user", "semantic"])
         self.assertEqual(actions.ladder(s, "press", element(states=["offscreen"]), gtk, "auto"),
-                         ["semantic", "agent", "foreground"])
+                         ["semantic", "user"])
         popup_item = element(role="menu item", states=["popup"])
         self.assertEqual(actions.ladder(s, "click", popup_item, gtk, "auto"), ["semantic"])
         with self.assertRaises(core.ToolError):
             actions.ladder(s, "double_click", popup_item, gtk, "auto")
         qt = toolkits.PROFILES["qt"]
-        self.assertEqual(actions.ladder(s, "press", element(), qt, "auto"), ["semantic", "agent", "foreground"])
+        self.assertEqual(actions.ladder(s, "press", element(), qt, "auto"), ["semantic", "user"])
         self.assertEqual(actions.ladder(s, "click", element(profile="chromium"), chrome, "auto"),
-                         ["foreground", "semantic"])
-        self.assertEqual(actions.ladder(s, "set_text", element(), chrome, "auto"), ["foreground"])
-        self.assertEqual(actions.ladder(FakeSession("user"), "press", element(), gtk, "auto"), ["semantic", "user"])
+                         ["user"])
+        self.assertEqual(actions.ladder(s, "set_text", element(), chrome, "auto"), ["user"])
+        self.assertEqual(actions.ladder(FakeSession("user"), "press", element(), gtk, "auto"), ["user", "semantic"])
         self.assertEqual(actions.ladder(FakeSession("user"), "focus", element(), gtk, "auto"), ["semantic", "user"])
-        self.assertEqual(actions.ladder(FakeSession(foreground="never"), "type", element(), gtk, "auto"), ["agent"])
-        self.assertEqual(actions.ladder(s, "click", None, gtk, "agent"), ["agent"])
+        self.assertEqual(actions.ladder(FakeSession(), "type", element(), gtk, "auto"), ["user"])
+        self.assertEqual(actions.ladder(s, "click", None, gtk, "user"), ["user"])
         with self.assertRaises(core.ToolError):
             actions.ladder(s, "click", None, gtk, "semantic")
 
@@ -142,7 +133,7 @@ class LadderTests(unittest.TestCase):
         self.assertEqual(actions.rank_for("press", [label, entry])[0].ref, "s1:2")
         self.assertEqual(actions.rank_for("focus", [label, entry])[0].ref, "s1:1")
 
-    def run_act(self, outcomes: dict, action: str = "activate", text: str | None = None) -> dict:
+    def run_act(self, outcomes: dict, action: str = "focus", text: str | None = None) -> dict:
         calls: list[str] = []
 
         def fake_rung(session, rung, *args):
@@ -160,28 +151,23 @@ class LadderTests(unittest.TestCase):
         return out
 
     def test_escalates_on_no_change_and_stops_on_change(self) -> None:
-        out = self.run_act({"semantic": {"effect": "no_change"}, "agent": {"effect": "changed"}})
-        self.assertEqual((out["delivery"], out["effect"], out["_calls"]), ("agent", "changed", ["semantic", "agent"]))
+        out = self.run_act({"semantic": {"effect": "no_change"}, "user": {"effect": "changed"}})
+        self.assertEqual((out["delivery"], out["effect"], out["_calls"]), ("user", "changed", ["semantic", "user"]))
         self.assertEqual(out["escalations"], [{"rung": "semantic", "effect": "no_change"}])
 
     def test_failed_text_readback_escalates_even_when_events_fired(self) -> None:
         out = self.run_act({"semantic": {"effect": "changed", "readback_failed": True},
-                            "agent": {"effect": "confirmed"}}, action="set_text", text="pw")
-        self.assertEqual(out["delivery"], "agent")
+                            "user": {"effect": "confirmed"}}, action="set_text", text="pw")
+        self.assertEqual(out["delivery"], "user")
         self.assertTrue(out["escalations"][0]["readback_failed"])
         self.assertNotIn("pw", json.dumps(out["_meta"]))
         self.assertEqual(out["_meta"]["characters"], 2)
 
     def test_errors_escalate_and_all_failing_raises(self) -> None:
-        out = self.run_act({"semantic": core.ToolError("no action", code="no_action"), "agent": {"effect": "changed"}})
+        out = self.run_act({"semantic": core.ToolError("no action", code="no_action"), "user": {"effect": "changed"}})
         self.assertEqual(out["escalations"][0]["code"], "no_action")
         with self.assertRaises(core.ToolError):
-            self.run_act({r: core.ToolError("x") for r in ("semantic", "agent", "foreground")})
-
-    def test_blocked_rung_falls_through_to_the_last(self) -> None:
-        out = self.run_act({"semantic": {"effect": "no_change"}, "agent": {"effect": "no_change"},
-                            "foreground": {"effect": "no_change", "blocked": "user_active"}})
-        self.assertEqual(out["blocked"], "user_active")
+            self.run_act({r: core.ToolError("x") for r in ("semantic", "user")})
 
 
 class WaitTests(unittest.TestCase):
