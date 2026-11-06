@@ -1,79 +1,91 @@
 {
- "id": "multiwindow-4",
- "family": "multiwindow",
- "param": "9902",
- "expect": "B:done 9902",
- "goal": "A second window titled 'Source' shows a transfer code. Enter that code into the Code field of the window titled 'B:', then click Apply.",
- "v1": [
-  {
-   "tool": "observe",
-   "args": {
-    "scope": "visible",
-    "query": {
-     "name": "Transfer code"
+  "expect": "B:done 9902",
+  "family": "multiwindow",
+  "goal": "A second window titled 'Source' shows a transfer code. Enter that code into the Code field of the window titled 'B:', then click Apply.",
+  "id": "multiwindow-4",
+  "legacy": [
+    {
+      "op": "click",
+      "target": "Code"
+    },
+    {
+      "op": "type",
+      "text": "9902"
+    },
+    {
+      "op": "click",
+      "target": "Apply"
     }
-   },
-   "capture": {
-    "code": "Transfer code: (\\d+)"
-   }
-  },
-  {
-   "tool": "run",
-   "args": {
-    "steps": [
-     {
-      "tool": "act",
+  ],
+  "param": "9902",
+  "v1": [
+    {
       "args": {
-       "target": {
+        "condition": {
+          "element": {
+            "match": "exact",
+            "name": "Transfer code"
+          }
+        },
+        "timeout_ms": 10000
+      },
+      "tool": "wait_for"
+    },
+    {
+      "args": {
         "query": {
-         "name": "Code",
-         "match": "exact"
-        }
-       },
-       "action": "set_text",
-       "text": "{code}"
-      }
-     },
-     {
-      "tool": "act",
+          "name": "Transfer code"
+        },
+        "scope": "visible"
+      },
+      "capture": {
+        "code": "Transfer code: (\\d+)"
+      },
+      "tool": "observe"
+    },
+    {
       "args": {
-       "target": {
-        "query": {
-         "name": "Apply",
-         "match": "exact"
-        }
-       },
-       "action": "press"
-      }
-     },
-     {
-      "tool": "wait_for",
-      "args": {
-       "condition": {
-        "window": {
-         "title": "B:done 9902",
-         "match": "exact"
-        }
-       },
-       "timeout_ms": 5000
-      }
-     }
-    ]
-   }
-  }
- ],
- "legacy": [
-  {
-   "op": "click",
-   "target": "Code"
-  },
-  {
-   "op": "type",
-   "text": "9902"
-  },
-  {
-   "op": "click",
-   "target": "Apply"
-  }
- ]
+        "steps": [
+          {
+            "args": {
+              "action": "set_text",
+              "target": {
+                "query": {
+                  "match": "exact",
+                  "name": "Code"
+                }
+              },
+              "text": "{code}"
+            },
+            "tool": "act"
+          },
+          {
+            "args": {
+              "action": "press",
+              "target": {
+                "query": {
+                  "match": "exact",
+                  "name": "Apply"
+                }
+              }
+            },
+            "tool": "act"
+          },
+          {
+            "args": {
+              "condition": {
+                "window": {
+                  "match": "exact",
+                  "title": "B:done 9902"
+                }
+              },
+              "timeout_ms": 5000
+            },
+            "tool": "wait_for"
+          }
+        ]
+      },
+      "tool": "run"
+    }
+  ]
 }

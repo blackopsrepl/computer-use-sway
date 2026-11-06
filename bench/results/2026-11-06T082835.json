@@ -1,0 +1,3 @@
+{"contract": "direct-user-session", "date": "2026-11-06T082835", "gate_failures": [], "summary": {"legacy_idle": {"calls": 7, "image_bytes": 42239, "response_bytes": 57370, "success": 1, "tasks": 1, "wall_s": 1.8}, "v1_idle": {"calls": 3, "image_bytes": 0, "response_bytes": 1184, "success": 1, "tasks": 1, "wall_s": 0.8}}, "results": [
+ {"family": "multiwindow", "id": "multiwindow-3", "legacy_idle": {"calls": 7, "image_bytes": 42239, "response_bytes": 57370, "success": true, "wall_s": 1.82}, "v1_idle": {"calls": 3, "image_bytes": 0, "response_bytes": 1184, "success": true, "wall_s": 0.81}}
+]}
